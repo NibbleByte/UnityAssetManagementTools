@@ -12,12 +12,12 @@ namespace DevLocker.Tools.AssetsManagement
 	/// Tool for searching components in prefabs.
 	/// Found prefabs can be placed in the scene for further inspection.
 	/// </summary>
-	public class SearchPrefabs : EditorWindow
+	public class SearchPrefabsComponents : EditorWindow
 	{
 		[MenuItem("Tools/Assets Management/Search Prefabs Components", false, 60)]
 		static void Init()
 		{
-			GetWindow<SearchPrefabs>("Search Prefabs");
+			GetWindow<SearchPrefabsComponents>("Search Prefabs Components");
 		}
 
 		private void OnSelectionChange()
