@@ -18,8 +18,6 @@ namespace DevLocker.Tools.AssetsManagement
 	/// 
 	/// Initial version of the script: http://wiki.unity3d.com/index.php/SceneViewWindow by Kevin Tarchenski.
 	/// Advanced (this) version by Filip Slavov (a.k.a. NibbleByte) - NibbleByte3@gmail.com.
-	/// 
-	/// Usage: "Tools/Asset Management/Scenes In Project"
 	/// </summary>
 	public class ScenesInProject : EditorWindow
 	{
