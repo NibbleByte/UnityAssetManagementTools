@@ -1,2 +1,2 @@
-# Unity-Assets-Management-Tools
+# Assets-Management-Tools
 Tools for managing assets in Unity.
