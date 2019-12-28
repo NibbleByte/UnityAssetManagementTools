@@ -69,7 +69,7 @@ namespace DevLocker.Tools.AssetsManagement
 
 		private bool m_ShowPreferences = false;
 		private const string PROJECT_SETTINGS = "ProjectSettings";
-		private const string PROJECT_PREFERENCES_PATH = PROJECT_SETTINGS + "/ScenesInProject.prefs";
+		private const string PROJECT_PREFERENCES_PATH = PROJECT_SETTINGS + "/ScenesInProject.Exclude.txt";
 		//
 		// Registry setting name
 		// Create individual setting per project (and project copies), to avoid clashes and bugs.
