@@ -28,14 +28,6 @@ namespace DevLocker.Tools.AssetsManagement
 			window.position = new Rect(window.position.xMin + 100f, window.position.yMin + 100f, 300f, 400f);
 		}
 
-		//
-		// Add here paths that you want to exclude from the list (example, demos etc from plugins).
-		//
-		public static string[] excludeScenePaths = new string[] {
-			"Assets/Extensions/"
-		};
-
-
 		private enum PinnedOptions
 		{
 			Unpin,
@@ -69,10 +61,15 @@ namespace DevLocker.Tools.AssetsManagement
 		private string m_Filter = string.Empty;
 		private bool m_FocusFilterField = false; // HACK!
 
+
+		[SerializeField]
+		private List<string> m_ProjectExcludePaths = new List<string>();	// Exclude paths (per project preference)
 		private List<string> m_Pinned = new List<string>();
 		private List<string> m_Scenes = new List<string>();
 
-
+		private bool m_ShowPreferences = false;
+		private const string PROJECT_SETTINGS = "ProjectSettings";
+		private const string PROJECT_PREFERENCES_PATH = PROJECT_SETTINGS + "/ScenesInProject.prefs";
 		//
 		// Registry setting name
 		// Create individual setting per project (and project copies), to avoid clashes and bugs.
@@ -155,7 +152,7 @@ namespace DevLocker.Tools.AssetsManagement
 			foreach (string guid in sceneGuids) {
 				string scenePath = AssetDatabase.GUIDToAssetPath(guid);
 
-				if (Array.FindIndex(excludeScenePaths, p => scenePath.IndexOf(p, StringComparison.OrdinalIgnoreCase) != -1) != -1)
+				if (m_ProjectExcludePaths.Any(p => scenePath.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
 					continue;
 
 				scenesInDB.Add(scenePath);
@@ -181,6 +178,12 @@ namespace DevLocker.Tools.AssetsManagement
 				StorePinned();
 				StoreScenes();
 			}
+
+			if (File.Exists(PROJECT_PREFERENCES_PATH)) {
+				m_ProjectExcludePaths = new List<string>(File.ReadAllLines(PROJECT_PREFERENCES_PATH));
+			} else {
+				m_ProjectExcludePaths = new List<string>();
+			}
 		}
 
 		private void InitializeStyles()
@@ -203,12 +206,17 @@ namespace DevLocker.Tools.AssetsManagement
 				AssetsChanged = false;
 			}
 
+			if (m_ShowPreferences) {
+				DrawPreferences();
+				return;
+			}
+
 
 			//
 			// Draw Filter
 			//
 			EditorGUILayout.BeginHorizontal();
-			GUILayout.Label("Search:", EditorStyles.boldLabel);
+			GUILayout.Label("Search:", EditorStyles.boldLabel, GUILayout.ExpandWidth(false));
 
 
 			GUI.SetNextControlName("FilterControl");
@@ -233,6 +241,11 @@ namespace DevLocker.Tools.AssetsManagement
 				GUI.FocusControl("");
 				m_FocusFilterField = true;
 				Repaint();
+			}
+
+			if (GUILayout.Button("P", GUILayout.Width(20.0f))) {
+				m_ShowPreferences = true;
+				GUIUtility.ExitGUI();
 			}
 
 			// Unfocus on enter. Open first scene from results.
@@ -521,6 +534,28 @@ namespace DevLocker.Tools.AssetsManagement
 			StoreScenes();
 			Repaint();
 		}
+
+
+		private void DrawPreferences()
+		{
+			EditorGUILayout.LabelField("Preferences:", EditorStyles.boldLabel);
+
+			var so = new SerializedObject(this);
+			var sp = so.FindProperty("m_ProjectExcludePaths");
+
+			EditorGUILayout.PropertyField(sp, new GUIContent("Exclude paths for this project:"), true);
+
+			so.ApplyModifiedProperties();
+			
+			if (GUILayout.Button("Done", GUILayout.ExpandWidth(false))) {
+				m_ProjectExcludePaths.RemoveAll(string.IsNullOrWhiteSpace);
+
+				File.WriteAllLines(PROJECT_PREFERENCES_PATH, m_ProjectExcludePaths);
+				GUI.FocusControl("");
+				m_ShowPreferences = false;
+				AssetsChanged = true;
+			}
+		}
 	}
 
 	//
@@ -529,6 +564,10 @@ namespace DevLocker.Tools.AssetsManagement
 	internal class ScenesInProjectChangeProcessor : UnityEditor.AssetModificationProcessor
 	{
 
+		// NOTE: This won't be called when duplicating a scene. Unity says so!
+		// More info: https://issuetracker.unity3d.com/issues/assetmodificationprocessor-is-not-notified-when-an-asset-is-duplicated
+		// The only way to get notified is via AssetPostprocessor, but that gets called for everything (saving scenes including).
+		// Check the implementation below.
 		public static void OnWillCreateAsset(string path)
 		{
 			if (path.EndsWith(".unity.meta") || path.EndsWith(".unity"))
@@ -551,5 +590,17 @@ namespace DevLocker.Tools.AssetsManagement
 			return AssetMoveResult.DidNotMove;
 		}
 	}
+
+	// NOTE: This gets called for every asset change including saving scenes.
+	// This might have small performance hit for big projects so don't use it.
+	//internal class ScenesInProjectAssetPostprocessor : AssetPostprocessor
+	//{
+	//	private static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths)
+	//	{
+	//		if (importedAssets.Any(path => path.EndsWith(".unity"))) {
+	//			ScenesInProject.AssetsChanged = true;
+	//		}
+	//	}
+	//}
 
 }
