@@ -22,7 +22,7 @@ namespace DevLocker.Tools.AssetsManagement
 			window._searchFilter.SetTemplateEnabled("Textures", true);
 		}
 
-		private SearchAssetsFilter _searchFilter = new SearchAssetsFilter(excludePackages: true);
+		private SearchAssetsFilter _searchFilter = new SearchAssetsFilter() { ExcludePackages = true };
 
 		private string _resultsFilter = "";
 		private List<SearchResultData> _results = new List<SearchResultData>();

@@ -63,13 +63,12 @@ namespace DevLocker.Tools.AssetsManagement
 
 
 		[SerializeField]
-		private List<string> m_ProjectExcludePaths = new List<string>();	// Exclude paths (per project preference)
+		private List<string> m_ProjectExcludes = new List<string>();	// Exclude paths OR filenames (per project preference)
 		private List<string> m_Pinned = new List<string>();
 		private List<string> m_Scenes = new List<string>();
 
 		private bool m_ShowPreferences = false;
-		private const string PROJECT_SETTINGS = "ProjectSettings";
-		private const string PROJECT_PREFERENCES_PATH = PROJECT_SETTINGS + "/ScenesInProject.Exclude.txt";
+		private const string PROJECT_EXCLUDES_PATH = "ProjectSettings/ScenesInProject.Exclude.txt";
 		//
 		// Registry setting name
 		// Create individual setting per project (and project copies), to avoid clashes and bugs.
@@ -152,7 +151,7 @@ namespace DevLocker.Tools.AssetsManagement
 			foreach (string guid in sceneGuids) {
 				string scenePath = AssetDatabase.GUIDToAssetPath(guid);
 
-				if (m_ProjectExcludePaths.Any(p => scenePath.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
+				if (ShouldExclude(m_ProjectExcludes, scenePath))
 					continue;
 
 				scenesInDB.Add(scenePath);
@@ -179,10 +178,10 @@ namespace DevLocker.Tools.AssetsManagement
 				StoreScenes();
 			}
 
-			if (File.Exists(PROJECT_PREFERENCES_PATH)) {
-				m_ProjectExcludePaths = new List<string>(File.ReadAllLines(PROJECT_PREFERENCES_PATH));
+			if (File.Exists(PROJECT_EXCLUDES_PATH)) {
+				m_ProjectExcludes = new List<string>(File.ReadAllLines(PROJECT_EXCLUDES_PATH));
 			} else {
-				m_ProjectExcludePaths = new List<string>();
+				m_ProjectExcludes = new List<string>();
 			}
 		}
 
@@ -536,25 +535,52 @@ namespace DevLocker.Tools.AssetsManagement
 		}
 
 
+		private Vector2 m_PreferencesScroll;
 		private void DrawPreferences()
 		{
 			EditorGUILayout.LabelField("Preferences:", EditorStyles.boldLabel);
 
-			var so = new SerializedObject(this);
-			var sp = so.FindProperty("m_ProjectExcludePaths");
+			m_PreferencesScroll = EditorGUILayout.BeginScrollView(m_PreferencesScroll);
 
-			EditorGUILayout.PropertyField(sp, new GUIContent("Exclude paths for this project:"), true);
+			var so = new SerializedObject(this);
+			var sp = so.FindProperty("m_ProjectExclude");
+
+			EditorGUILayout.PropertyField(sp, new GUIContent("Exclude paths or file names for this project:"), true);
 
 			so.ApplyModifiedProperties();
+
+			EditorGUILayout.EndScrollView();
 			
 			if (GUILayout.Button("Done", GUILayout.ExpandWidth(false))) {
-				m_ProjectExcludePaths.RemoveAll(string.IsNullOrWhiteSpace);
+				m_ProjectExcludes.RemoveAll(string.IsNullOrWhiteSpace);
 
-				File.WriteAllLines(PROJECT_PREFERENCES_PATH, m_ProjectExcludePaths);
+				File.WriteAllLines(PROJECT_EXCLUDES_PATH, m_ProjectExcludes);
 				GUI.FocusControl("");
 				m_ShowPreferences = false;
 				AssetsChanged = true;
 			}
+		}
+
+		// NOTE: Copy pasted from SearchAssetsFilter.
+		private static bool ShouldExclude(IEnumerable<string> excludes, string path)
+		{
+			foreach(var exclude in excludes) {
+
+				bool isExcludePath = exclude.Contains('/');    // Check if this is a path or just a filename
+
+				if (isExcludePath) {
+					if (path.StartsWith(exclude, StringComparison.OrdinalIgnoreCase))
+						return true;
+
+				} else {
+
+					var filename = Path.GetFileName(path);
+					if (filename.IndexOf(exclude, StringComparison.OrdinalIgnoreCase) != -1)
+						return true;
+				}
+			}
+
+			return false;
 		}
 	}
 

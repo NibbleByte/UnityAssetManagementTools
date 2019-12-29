@@ -40,10 +40,10 @@ namespace DevLocker.Tools.AssetsManagement
 			}
 		}
 
-		private bool _excludePackages;
 		private string _includeFolders = "";
 		private string _excludeFolders = "";
-		private string[] _excludeFilenames = new string[0];
+		public bool ExcludePackages;
+		public List<string> ExcludePreferences = new List<string>();
 
 		private List<GUISearchTemplate> _searchTemplates = new List<GUISearchTemplate>()
 		{
@@ -58,29 +58,21 @@ namespace DevLocker.Tools.AssetsManagement
 			new GUISearchTemplate("Physics material", "t:PhysicMaterial"),
 		};
 
-		public SearchAssetsFilter(bool excludePackages)
-		{
-			_excludePackages = excludePackages;
-		}
-
 		public void SetTemplateEnabled(string label, bool enable)
 		{
 			var template =_searchTemplates.First(t => t.Name == label);
 			template.Enable = enable;
 		}
 
-		public void SetExcludedFilenames(string[] filenames)
-		{
-			_excludeFilenames = filenames;
-		}
-
 		public SearchAssetsFilter Clone()
 		{
-			var clone = new SearchAssetsFilter(_excludePackages);
+			var clone = new SearchAssetsFilter();
 
 			clone._searchTemplates.Clear();
 			clone._searchTemplates.AddRange(_searchTemplates.Select(t => t.Clone()));
 
+			clone.ExcludePackages = ExcludePackages;
+			clone.ExcludePreferences = new List<string>(ExcludePreferences);
 			clone._includeFolders = _includeFolders;
 			clone._excludeFolders = _excludeFolders;
 
@@ -152,13 +144,34 @@ namespace DevLocker.Tools.AssetsManagement
 			return _excludeFolders.Split(";".ToCharArray(), StringSplitOptions.RemoveEmptyEntries);
 		}
 
+		// NOTE: Copy pasted from ScenesInProject.
+		private static bool ShouldExclude(IEnumerable<string> excludes, string path)
+		{
+			foreach (var exclude in excludes) {
+
+				bool isExcludePath = exclude.Contains('/');    // Check if this is a path or just a filename
+
+				if (isExcludePath) {
+					if (path.StartsWith(exclude, StringComparison.OrdinalIgnoreCase))
+						return true;
+
+				} else {
+
+					var filename = Path.GetFileName(path);
+					if (filename.IndexOf(exclude, StringComparison.OrdinalIgnoreCase) != -1)
+						return true;
+				}
+			}
+
+			return false;
+		}
+
 		private bool IsExcludedFilename(string path)
 		{
-			if (_excludeFilenames.Length == 0)
+			if (ExcludePreferences.Count == 0)
 				return false;
-			
-			var filename = Path.GetFileName(path);
-			return _excludeFilenames.Any(exclude => filename.IndexOf(exclude, StringComparison.OrdinalIgnoreCase) != -1);
+
+			return ShouldExclude(ExcludePreferences, path);
 		}
 
 		public IEnumerable<string> GetFilteredPaths()
@@ -174,7 +187,7 @@ namespace DevLocker.Tools.AssetsManagement
 				.Where(path => !IsExcludedFilename(path))
 				;
 
-			if (_excludePackages) {
+			if (ExcludePackages) {
 				query = query.Where(path => !path.StartsWith("Packages"));
 			}
 

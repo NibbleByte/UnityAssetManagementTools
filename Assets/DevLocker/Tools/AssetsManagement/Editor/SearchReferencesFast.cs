@@ -20,12 +20,6 @@ namespace DevLocker.Tools.AssetsManagement
 	/// </summary>
 	public class SearchReferencesFast : EditorWindow
 	{
-		// HACK: Until we have options, excluding file names is hard coded here.
-		public static readonly string[] EXCLUDE_FILENAMES = new []{
-			"SurfaceBlenderDef"
-		};
-		
-		
 		[MenuItem("Tools/Assets Management/Search References (FAST)", false, 61)]
 		static void Init()
 		{
@@ -56,7 +50,8 @@ namespace DevLocker.Tools.AssetsManagement
 			}
 		}
 
-
+		private bool m_ShowPreferences = false;
+		private const string PROJECT_EXCLUDES_PATH = "ProjectSettings/SearchReferencesFast.Exclude.txt";
 
 		private bool _searchText = false;
 		private string _textToSearch;
@@ -71,7 +66,8 @@ namespace DevLocker.Tools.AssetsManagement
 
 		private bool _foldOutSearchCriterias = true;
 		private SearchMetas _searchMetas = SearchMetas.SearchWithMetas;
-		private SearchAssetsFilter _searchFilter = new SearchAssetsFilter(excludePackages: true);
+		[SerializeField]
+		private SearchAssetsFilter _searchFilter = new SearchAssetsFilter() { ExcludePackages = true };
 
 		private string _resultsSearchEntryFilter = "";
 		private string _resultsFoundEntryFilter = "";
@@ -92,7 +88,12 @@ namespace DevLocker.Tools.AssetsManagement
 		void OnEnable()
 		{
 			_searchFilter.RefreshCounters();
-			_searchFilter.SetExcludedFilenames(EXCLUDE_FILENAMES);
+
+			if (File.Exists(PROJECT_EXCLUDES_PATH)) {
+				_searchFilter.ExcludePreferences = new List<string>(File.ReadAllLines(PROJECT_EXCLUDES_PATH));
+			} else {
+				_searchFilter.ExcludePreferences = new List<string>();
+			}
 		}
 
 		// Sometimes the bold style gets corrupted and displays just black text, for no good reason.
@@ -114,6 +115,11 @@ namespace DevLocker.Tools.AssetsManagement
 		{
 			if (BOLDED_FOLDOUT_STYLE == null) {
 				InitStyles();
+			}
+
+			if (m_ShowPreferences) {
+				DrawPreferences();
+				return;
 			}
 
 
@@ -178,6 +184,11 @@ namespace DevLocker.Tools.AssetsManagement
 					return; // HACK: causes Null exception in editor layout system for some reason.
 				}
 
+			}
+
+			if (GUILayout.Button("P", GUILayout.Width(20.0f))) {
+				m_ShowPreferences = true;
+				GUIUtility.ExitGUI();
 			}
 
 			if (GUILayout.Button("?", GUILayout.Width(20.0f))) {
@@ -835,6 +846,31 @@ namespace DevLocker.Tools.AssetsManagement
 			}
 
 			return false;
+		}
+
+		private Vector2 m_PreferencesScroll;
+		private void DrawPreferences()
+		{
+			EditorGUILayout.LabelField("Preferences:", EditorStyles.boldLabel);
+
+			m_PreferencesScroll = EditorGUILayout.BeginScrollView(m_PreferencesScroll, GUILayout.ExpandHeight(false));
+			
+			var so = new SerializedObject(this);
+			var sp = so.FindProperty("_searchFilter").FindPropertyRelative("ExcludePreferences");
+			
+			EditorGUILayout.PropertyField(sp, new GUIContent("Exclude paths or file names for this project:"), true);
+			
+			so.ApplyModifiedProperties();
+			
+			EditorGUILayout.EndScrollView();
+			
+			if (GUILayout.Button("Done", GUILayout.ExpandWidth(false))) {
+				_searchFilter.ExcludePreferences.RemoveAll(string.IsNullOrWhiteSpace);
+
+				File.WriteAllLines(PROJECT_EXCLUDES_PATH, _searchFilter.ExcludePreferences);
+				GUI.FocusControl("");
+				m_ShowPreferences = false;
+			}
 		}
 
 
