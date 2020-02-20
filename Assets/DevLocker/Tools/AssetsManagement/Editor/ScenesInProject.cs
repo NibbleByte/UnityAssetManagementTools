@@ -15,7 +15,7 @@ namespace DevLocker.Tools.AssetsManagement
 	/// + quick access to scenes
 	/// + easily load scenes additively
 	/// + pin favourites
-	/// 
+	///
 	/// Initial version of the script: http://wiki.unity3d.com/index.php/SceneViewWindow by Kevin Tarchenski.
 	/// Advanced (this) version by Filip Slavov (a.k.a. NibbleByte) - NibbleByte3@gmail.com.
 	/// </summary>
@@ -210,11 +210,22 @@ namespace DevLocker.Tools.AssetsManagement
 				return;
 			}
 
+			EditorGUILayout.BeginHorizontal();
 
+			bool openFirstResult;
+			string[] filterWords;
+			DrawControls(out openFirstResult, out filterWords);
+
+			DrawSceneLists(openFirstResult, filterWords);
+
+			EditorGUILayout.EndVertical();
+		}
+
+		private void DrawControls(out bool openFirstResult, out string[] filterWords)
+		{
 			//
 			// Draw Filter
 			//
-			EditorGUILayout.BeginHorizontal();
 			GUILayout.Label("Search:", EditorStyles.boldLabel, GUILayout.ExpandWidth(false));
 
 
@@ -248,7 +259,7 @@ namespace DevLocker.Tools.AssetsManagement
 			}
 
 			// Unfocus on enter. Open first scene from results.
-			bool openFirstResult = false;
+			openFirstResult = false;
 			if (Event.current.isKey && (Event.current.keyCode == KeyCode.Return || Event.current.keyCode == KeyCode.KeypadEnter) && GUI.GetNameOfFocusedControl() == "FilterControl") {
 				GUI.FocusControl("");
 				Repaint();
@@ -262,12 +273,14 @@ namespace DevLocker.Tools.AssetsManagement
 
 			EditorGUILayout.EndHorizontal();
 
-
-			var filterWords = string.IsNullOrEmpty(m_Filter) ? null : m_Filter.Split(FILTER_WORD_SEPARATORS, StringSplitOptions.RemoveEmptyEntries);
+			filterWords = string.IsNullOrEmpty(m_Filter) ? null : m_Filter.Split(FILTER_WORD_SEPARATORS, StringSplitOptions.RemoveEmptyEntries);
 			if (openFirstResult) {
 				m_Filter = "";
 			}
+		}
 
+		private void DrawSceneLists(bool openFirstResult, string[] filterWords)
+		{
 			//
 			// Show pinned scenes
 			//
@@ -300,8 +313,6 @@ namespace DevLocker.Tools.AssetsManagement
 					EditorGUILayout.EndVertical();
 				}
 			}
-
-
 
 
 			//
@@ -345,7 +356,6 @@ namespace DevLocker.Tools.AssetsManagement
 			}
 
 			EditorGUILayout.EndScrollView();
-			EditorGUILayout.EndVertical();
 		}
 
 		private bool ShouldScrollPinned(string[] filterWords, out float scrollViewHeight)
@@ -538,26 +548,59 @@ namespace DevLocker.Tools.AssetsManagement
 		private Vector2 m_PreferencesScroll;
 		private void DrawPreferences()
 		{
-			EditorGUILayout.LabelField("Preferences:", EditorStyles.boldLabel);
+			EditorGUILayout.Space();
 
-			m_PreferencesScroll = EditorGUILayout.BeginScrollView(m_PreferencesScroll);
+			//
+			// Save / Close Buttons
+			//
+			EditorGUILayout.BeginHorizontal();
+			{
+				EditorGUILayout.LabelField("Save changes:", EditorStyles.boldLabel);
 
-			var so = new SerializedObject(this);
-			var sp = so.FindProperty("m_ProjectExclude");
+				GUILayout.FlexibleSpace();
 
-			EditorGUILayout.PropertyField(sp, new GUIContent("Exclude paths or file names for this project:"), true);
+				if (GUILayout.Button("Close", GUILayout.MaxWidth(60f))) {
+					GUI.FocusControl("");
+					m_ShowPreferences = false;
+					EditorGUIUtility.ExitGUI();
+				}
 
-			so.ApplyModifiedProperties();
+				var prevColor = GUI.backgroundColor;
+				GUI.backgroundColor = Color.green / 1.2f;
+				if (GUILayout.Button("Save All", GUILayout.MaxWidth(150f))) {
+					m_ProjectExcludes.RemoveAll(string.IsNullOrWhiteSpace);
 
-			EditorGUILayout.EndScrollView();
-			
+					File.WriteAllLines(PROJECT_EXCLUDES_PATH, m_ProjectExcludes);
+					GUI.FocusControl("");
+					AssetsChanged = true;
+				}
+				GUI.backgroundColor = prevColor;
+			}
+			EditorGUILayout.EndHorizontal();
+
+			EditorGUILayout.Space();
+
+			//
+			// Project Preferences
+			//
+			EditorGUILayout.LabelField("Project Preferences:", EditorStyles.boldLabel);
+			{
+				EditorGUILayout.HelpBox("These settings will be saved in the ProjectSettings folder.\nFeel free to add them to your version control system.\nCoordinate any changes here with your team.", MessageType.Warning);
+
+				m_PreferencesScroll = EditorGUILayout.BeginScrollView(m_PreferencesScroll);
+
+				var so = new SerializedObject(this);
+				var sp = so.FindProperty("m_ProjectExcludes");
+
+				EditorGUILayout.PropertyField(sp, new GUIContent("Exclude paths", "Asset paths that will be ignored."), true);
+
+				so.ApplyModifiedProperties();
+
+				EditorGUILayout.EndScrollView();
+			}
+
 			if (GUILayout.Button("Done", GUILayout.ExpandWidth(false))) {
-				m_ProjectExcludes.RemoveAll(string.IsNullOrWhiteSpace);
 
-				File.WriteAllLines(PROJECT_EXCLUDES_PATH, m_ProjectExcludes);
-				GUI.FocusControl("");
-				m_ShowPreferences = false;
-				AssetsChanged = true;
 			}
 		}
 
@@ -586,7 +629,7 @@ namespace DevLocker.Tools.AssetsManagement
 
 	//
 	// Monitors scene assets for any modifications and signals to the ScenesViewWindow.
-	// 
+	//
 	internal class ScenesInProjectChangeProcessor : UnityEditor.AssetModificationProcessor
 	{
 
