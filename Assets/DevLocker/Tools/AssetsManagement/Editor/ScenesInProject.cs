@@ -39,6 +39,25 @@ namespace DevLocker.Tools.AssetsManagement
 			ShowInProject,
 		}
 
+		private enum SortType
+		{
+			MostRecent,
+			ByFileName,
+			ByPath,
+		}
+
+		[Serializable]
+		private class PersonalPreferences
+		{
+			public SortType SortType = SortType.MostRecent;
+			public int ListCountLimit = 64;		// Round number... :D
+
+			public PersonalPreferences Clone()
+			{
+				return (PersonalPreferences)MemberwiseClone();
+			}
+		}
+
 		private readonly char[] FILTER_WORD_SEPARATORS = new char[] { ' ', '\t' };
 		private GUIStyle LEFT_ALIGNED_BUTTON;
 		private GUIContent m_SceneButtonTextCache = new GUIContent();
@@ -54,13 +73,13 @@ namespace DevLocker.Tools.AssetsManagement
 		// In big projects with 1k number of scenes, don't show everything.
 		[NonSerialized]
 		private bool m_ShowFullBigList = false;
-		private const int SANITY_LIST_COUNT = 64; // Round number... :D
 
 		private Vector2 m_ScrollPos;
 		private Vector2 m_ScrollPosPinned;
 		private string m_Filter = string.Empty;
 		private bool m_FocusFilterField = false; // HACK!
 
+		private PersonalPreferences m_PersonalPrefs = new PersonalPreferences();
 
 		[SerializeField]
 		private List<string> m_ProjectExcludes = new List<string>();	// Exclude paths OR filenames (per project preference)
@@ -68,6 +87,7 @@ namespace DevLocker.Tools.AssetsManagement
 		private List<string> m_Scenes = new List<string>();
 
 		private bool m_ShowPreferences = false;
+		private const string PERSONAL_PREFERENCES_KEY = "ScenesInProject";
 		private const string PROJECT_EXCLUDES_PATH = "ProjectSettings/ScenesInProject.Exclude.txt";
 
 		private const string SettingsPathScenes = "Library/ScenesInProject.Scenes.txt";
@@ -83,7 +103,7 @@ namespace DevLocker.Tools.AssetsManagement
 			File.WriteAllLines(SettingsPathScenes, m_Scenes);
 		}
 
-		private bool RemoveRedundant(List<string> list, List<string> scenesInDB)
+		private static bool RemoveRedundant(List<string> list, List<string> scenesInDB)
 		{
 			bool removeSuccessful = false;
 
@@ -98,6 +118,24 @@ namespace DevLocker.Tools.AssetsManagement
 			return removeSuccessful;
 		}
 
+		private void SortScenes(List<string> list)
+		{
+			switch(m_PersonalPrefs.SortType) {
+				case SortType.MostRecent:
+					break;
+
+				case SortType.ByFileName:
+					list.Sort((a, b) => Path.GetFileNameWithoutExtension(a).CompareTo(Path.GetFileNameWithoutExtension(b)));
+					break;
+
+				case SortType.ByPath:
+					list.Sort((a, b) => a.CompareTo(b));
+					break;
+
+				default: throw new NotImplementedException();
+			}
+		}
+
 		private void OnDisable()
 		{
 			if (m_Initialized) {
@@ -109,12 +147,29 @@ namespace DevLocker.Tools.AssetsManagement
 		//
 		// Load save settings
 		//
-		private void InitializeData()
+		private void LoadData()
 		{
+			var personalPrefsData = EditorPrefs.GetString(PERSONAL_PREFERENCES_KEY, string.Empty);
+			if (!string.IsNullOrEmpty(personalPrefsData)) {
+				m_PersonalPrefs = JsonUtility.FromJson<PersonalPreferences>(personalPrefsData);
+			} else {
+				m_PersonalPrefs = new PersonalPreferences();
+			}
+
 			if (File.Exists(PROJECT_EXCLUDES_PATH)) {
 				m_ProjectExcludes = new List<string>(File.ReadAllLines(PROJECT_EXCLUDES_PATH));
 			} else {
 				m_ProjectExcludes = new List<string>();
+			}
+
+			m_Pinned = new List<string>(File.ReadAllLines(SettingsPathPinnedScenes));
+			m_Scenes = new List<string>(File.ReadAllLines(SettingsPathScenes));
+		}
+
+		private void InitializeData()
+		{
+			if (!m_Initialized) {
+				LoadData();
 			}
 
 			//
@@ -130,9 +185,6 @@ namespace DevLocker.Tools.AssetsManagement
 
 				scenesInDB.Add(scenePath);
 			}
-
-			m_Pinned = new List<string>(File.ReadAllLines(SettingsPathPinnedScenes));
-			m_Scenes = new List<string>(File.ReadAllLines(SettingsPathScenes));
 
 			bool hasChanges = RemoveRedundant(m_Scenes, scenesInDB);
 			hasChanges = RemoveRedundant(m_Pinned, m_Scenes) || hasChanges;
@@ -150,6 +202,8 @@ namespace DevLocker.Tools.AssetsManagement
 			if (hasChanges) {
 				StorePinned();
 				StoreScenes();
+
+				SortScenes(m_Scenes);
 			}
 		}
 
@@ -307,18 +361,18 @@ namespace DevLocker.Tools.AssetsManagement
 					openFirstResult = false;
 				}
 
-				if (!m_ShowFullBigList && filteredCount >= SANITY_LIST_COUNT)
+				if (!m_ShowFullBigList && filteredCount >= m_PersonalPrefs.ListCountLimit)
 					break;
 			}
 
 
 			// Big lists support
-			if (!m_ShowFullBigList && filteredCount >= SANITY_LIST_COUNT && GUILayout.Button("... Show All ...", GUILayout.ExpandWidth(true))) {
+			if (!m_ShowFullBigList && filteredCount >= m_PersonalPrefs.ListCountLimit && GUILayout.Button("... Show All ...", GUILayout.ExpandWidth(true))) {
 				m_ShowFullBigList = true;
 				GUIUtility.ExitGUI();
 			}
 
-			if (m_ShowFullBigList && filteredCount >= SANITY_LIST_COUNT && GUILayout.Button("... Hide Some ...", GUILayout.ExpandWidth(true))) {
+			if (m_ShowFullBigList && filteredCount >= m_PersonalPrefs.ListCountLimit && GUILayout.Button("... Hide Some ...", GUILayout.ExpandWidth(true))) {
 				m_ShowFullBigList = false;
 				GUIUtility.ExitGUI();
 			}
@@ -408,7 +462,10 @@ namespace DevLocker.Tools.AssetsManagement
 					} else {
 						EditorSceneManager.OpenScene(scenePath);
 					}
-					MoveSceneAtTopOfList(scenePath);
+
+					if (m_PersonalPrefs.SortType == SortType.MostRecent) {
+						MoveSceneAtTopOfList(scenePath);
+					}
 					//m_Filter = "";	// It's a feature. Sometimes you need to press on multiple scenes in a row.
 					GUI.FocusControl("");
 				}
@@ -436,7 +493,10 @@ namespace DevLocker.Tools.AssetsManagement
 				} else {
 					if (!isSceneLoaded) {
 						EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Additive);
-						MoveSceneAtTopOfList(scenePath);
+
+						//if (m_PersonalPrefs.SortType == SortType.MostRecent) {
+						//	MoveSceneAtTopOfList(scenePath);
+						//}
 					} else if (!isActiveScene) {
 						EditorSceneManager.CloseScene(scene, true);
 					}
@@ -527,26 +587,40 @@ namespace DevLocker.Tools.AssetsManagement
 
 				GUILayout.FlexibleSpace();
 
-				if (GUILayout.Button("Close", GUILayout.MaxWidth(60f))) {
-					GUI.FocusControl("");
-					m_ShowPreferences = false;
-					EditorGUIUtility.ExitGUI();
-				}
-
 				var prevColor = GUI.backgroundColor;
 				GUI.backgroundColor = Color.green / 1.2f;
-				if (GUILayout.Button("Save All", GUILayout.MaxWidth(150f))) {
+				if (GUILayout.Button("Save And Close", GUILayout.MaxWidth(150f))) {
+
 					m_ProjectExcludes.RemoveAll(string.IsNullOrWhiteSpace);
+					SortScenes(m_Scenes);
+
+					EditorPrefs.SetString(PERSONAL_PREFERENCES_KEY, JsonUtility.ToJson(m_PersonalPrefs));
 
 					File.WriteAllLines(PROJECT_EXCLUDES_PATH, m_ProjectExcludes);
 					GUI.FocusControl("");
+					m_ShowPreferences = false;
 					AssetsChanged = true;
+
+					EditorGUIUtility.ExitGUI();
 				}
 				GUI.backgroundColor = prevColor;
 			}
 			EditorGUILayout.EndHorizontal();
 
 			EditorGUILayout.Space();
+
+			//
+			// Personal Preferences
+			//
+			EditorGUILayout.LabelField("Personal Preferences:", EditorStyles.boldLabel);
+			{
+				EditorGUILayout.HelpBox("Hint: check the the tooltips.", MessageType.Info);
+
+				m_PersonalPrefs.SortType = (SortType) EditorGUILayout.EnumPopup(new GUIContent("Sort By", "How to sort the list of scenes (not the pinned ones).\nNOTE: Changing this might override the \"Most Recent\" sort done by now."), m_PersonalPrefs.SortType);
+
+				m_PersonalPrefs.ListCountLimit = EditorGUILayout.IntField(new GUIContent("Shown scenes limit", "If the scenes in the list are more than this value, they will be truncated (button \"Show All\" is shown).\nTruncated scenes still participate in the search.\n\nThis is very useful in a project with lots of scenes, where drawing large scrollable lists is expensive."), m_PersonalPrefs.ListCountLimit);
+				m_PersonalPrefs.ListCountLimit = Mathf.Clamp(m_PersonalPrefs.ListCountLimit, 0, 1024); // More round.
+			}
 
 			//
 			// Project Preferences
@@ -565,10 +639,6 @@ namespace DevLocker.Tools.AssetsManagement
 				so.ApplyModifiedProperties();
 
 				EditorGUILayout.EndScrollView();
-			}
-
-			if (GUILayout.Button("Done", GUILayout.ExpandWidth(false))) {
-
 			}
 		}
 
