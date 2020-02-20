@@ -69,49 +69,18 @@ namespace DevLocker.Tools.AssetsManagement
 
 		private bool m_ShowPreferences = false;
 		private const string PROJECT_EXCLUDES_PATH = "ProjectSettings/ScenesInProject.Exclude.txt";
-		//
-		// Registry setting name
-		// Create individual setting per project (and project copies), to avoid clashes and bugs.
-		//
-		private string PinnedScenesSetting {
-			get {
-				return string.Format("SceneView_PinnedScenes_{0}", Regex.Replace(Application.dataPath, @"[/\\:?]", ""));
-			}
-		}
 
-		private string ScenesSetting {
-			get {
-				return string.Format("SceneView_Scenes_{0}", Regex.Replace(Application.dataPath, @"[/\\:?]", ""));
-			}
-		}
-
-		private void StoreListToPrefs(string setting, List<string> list)
-		{
-			string storage = string.Join(";", list.ToArray());
-			EditorPrefs.SetString(setting, storage);
-		}
-
-		private List<string> ReadListFromPrefs(string setting)
-		{
-			List<string> result;
-			string storage = EditorPrefs.GetString(setting, string.Empty);
-
-			if (!string.IsNullOrEmpty(storage)) {
-				result = new List<string>(storage.Split(';'));
-			} else {
-				result = new List<string>();
-			}
-			return result;
-		}
+		private const string SettingsPathScenes = "Library/ScenesInProject.Scenes.txt";
+		private const string SettingsPathPinnedScenes = "Library/ScenesInProject.PinnedScenes.txt";
 
 		private void StorePinned()
 		{
-			StoreListToPrefs(PinnedScenesSetting, m_Pinned);
+			File.WriteAllLines(SettingsPathPinnedScenes, m_Pinned);
 		}
 
 		private void StoreScenes()
 		{
-			StoreListToPrefs(ScenesSetting, m_Scenes);
+			File.WriteAllLines(SettingsPathScenes, m_Scenes);
 		}
 
 		private bool RemoveRedundant(List<string> list, List<string> scenesInDB)
@@ -142,6 +111,11 @@ namespace DevLocker.Tools.AssetsManagement
 		//
 		private void InitializeData()
 		{
+			if (File.Exists(PROJECT_EXCLUDES_PATH)) {
+				m_ProjectExcludes = new List<string>(File.ReadAllLines(PROJECT_EXCLUDES_PATH));
+			} else {
+				m_ProjectExcludes = new List<string>();
+			}
 
 			//
 			// Cache available scenes
@@ -157,8 +131,8 @@ namespace DevLocker.Tools.AssetsManagement
 				scenesInDB.Add(scenePath);
 			}
 
-			m_Pinned = ReadListFromPrefs(PinnedScenesSetting);
-			m_Scenes = ReadListFromPrefs(ScenesSetting);
+			m_Pinned = new List<string>(File.ReadAllLines(SettingsPathPinnedScenes));
+			m_Scenes = new List<string>(File.ReadAllLines(SettingsPathScenes));
 
 			bool hasChanges = RemoveRedundant(m_Scenes, scenesInDB);
 			hasChanges = RemoveRedundant(m_Pinned, m_Scenes) || hasChanges;
@@ -176,12 +150,6 @@ namespace DevLocker.Tools.AssetsManagement
 			if (hasChanges) {
 				StorePinned();
 				StoreScenes();
-			}
-
-			if (File.Exists(PROJECT_EXCLUDES_PATH)) {
-				m_ProjectExcludes = new List<string>(File.ReadAllLines(PROJECT_EXCLUDES_PATH));
-			} else {
-				m_ProjectExcludes = new List<string>();
 			}
 		}
 
