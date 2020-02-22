@@ -67,14 +67,24 @@ namespace DevLocker.Tools.AssetsManagement
 
 			public string Path;
 			public string Name;
-			public string DisplayName;
 			public string Folder;
+			public string DisplayName;
 			public bool FirstInGroup = false;
+
+			public ColorizedPath ColorizedPath;
 
 			public override string ToString()
 			{
 				return Path;
 			}
+		}
+
+		[Serializable]
+		private class ColorizedPath
+		{
+			public string StartPath;
+			public Color BackgroundColor = Color.black;
+			public Color TextColor = Color.white;
 		}
 
 		[Serializable]
@@ -88,10 +98,13 @@ namespace DevLocker.Tools.AssetsManagement
 			public int SpaceBetweenGroups = 6;  // Pixels between scenes with different folders.
 			public int SpaceBetweenGroupsPinned = 0;  // Same but for pinned.
 
+			public List<ColorizedPath> ColorizedPaths = new List<ColorizedPath>();
+
 			public PersonalPreferences Clone()
 			{
 				var clone = (PersonalPreferences)MemberwiseClone();
 				clone.DisplayRemoveFolders = new List<string>(DisplayRemoveFolders);
+				clone.ColorizedPaths = new List<ColorizedPath>(ColorizedPaths);
 
 				return clone;
 			}
@@ -100,7 +113,9 @@ namespace DevLocker.Tools.AssetsManagement
 		#endregion
 
 		private readonly char[] FILTER_WORD_SEPARATORS = new char[] { ' ', '\t' };
-		private GUIStyle LEFT_ALIGNED_BUTTON;
+		private GUIStyle SCENE_BUTTON;
+		private GUIStyle SCENE_OPTIONS_BUTTON;
+		private GUIStyle SCENE_LOADED_BUTTON;
 		private GUIContent m_PreferencesButtonTextCache = new GUIContent("P", "Preferences...");
 		private GUIContent m_SceneButtonTextCache = new GUIContent();
 		private GUIContent m_AddSceneButtonTextCache = new GUIContent("+", "Load scene additively");
@@ -294,6 +309,25 @@ namespace DevLocker.Tools.AssetsManagement
 			}
 		}
 
+		private void RefreshColorizedPaths(List<SceneEntry> list)
+		{
+			foreach(var sceneEntry in list) {
+
+				sceneEntry.ColorizedPath = null;
+
+				foreach (var colors in m_PersonalPrefs.ColorizedPaths) {
+
+					// Find best match for this scene entry.
+					if (sceneEntry.Path.StartsWith(colors.StartPath, StringComparison.OrdinalIgnoreCase)) {
+
+						if (sceneEntry.ColorizedPath == null || sceneEntry.ColorizedPath.StartPath.Length < colors.StartPath.Length) {
+							sceneEntry.ColorizedPath = colors;
+						}
+					}
+				}
+			}
+		}
+
 		private void OnDisable()
 		{
 			if (m_Initialized) {
@@ -366,6 +400,9 @@ namespace DevLocker.Tools.AssetsManagement
 				RefreshDisplayNames(m_Scenes);
 				RefreshDisplayNames(m_Pinned);
 
+				RefreshColorizedPaths(m_Scenes);
+				RefreshColorizedPaths(m_Pinned);
+
 				StorePinned();
 				StoreScenes();
 			}
@@ -376,9 +413,17 @@ namespace DevLocker.Tools.AssetsManagement
 
 		private void InitializeStyles()
 		{
-			LEFT_ALIGNED_BUTTON = new GUIStyle(GUI.skin.button);
-			LEFT_ALIGNED_BUTTON.alignment = TextAnchor.MiddleLeft;
-			LEFT_ALIGNED_BUTTON.padding.left = 10;
+			SCENE_BUTTON = new GUIStyle(GUI.skin.button);
+			SCENE_BUTTON.alignment = TextAnchor.MiddleLeft;
+			SCENE_BUTTON.padding.left = 10;
+
+			SCENE_OPTIONS_BUTTON = new GUIStyle(GUI.skin.button);
+			SCENE_OPTIONS_BUTTON.alignment = TextAnchor.MiddleCenter;
+
+			SCENE_LOADED_BUTTON = new GUIStyle(GUI.skin.button);
+			SCENE_LOADED_BUTTON.alignment = TextAnchor.MiddleCenter;
+			SCENE_LOADED_BUTTON.padding.left = SCENE_LOADED_BUTTON.padding.right = 2;
+			SCENE_LOADED_BUTTON.contentOffset = new Vector2(1f, 0f);
 		}
 
 
@@ -604,15 +649,30 @@ namespace DevLocker.Tools.AssetsManagement
 			m_SceneButtonTextCache.text = sceneEntry.DisplayName;
 			m_SceneButtonTextCache.tooltip = sceneEntry.Path;
 
+			var prevBackgroundColor = GUI.backgroundColor;
+			var prevColor = SCENE_BUTTON.normal.textColor;
+			if (sceneEntry.ColorizedPath != null && !string.IsNullOrEmpty(sceneEntry.ColorizedPath.StartPath)) {
+				GUI.backgroundColor = sceneEntry.ColorizedPath.BackgroundColor;
+				SCENE_BUTTON.normal.textColor
+					= SCENE_OPTIONS_BUTTON.normal.textColor
+					= SCENE_LOADED_BUTTON.normal.textColor
+					= sceneEntry.ColorizedPath.TextColor;
+			}
+
 			var scene = SceneManager.GetSceneByPath(sceneEntry.Path);
 			bool isSceneLoaded = scene.IsValid();
 			bool isActiveScene = isSceneLoaded && scene == SceneManager.GetActiveScene();
 			var loadedButton = isSceneLoaded ? (isActiveScene ? m_ActiveSceneButtonTextCache : m_RemoveSceneButtonTextCache) : m_AddSceneButtonTextCache;
 
-			bool optionsPressed = GUILayout.Button(isPinned ? "O" : "@", GUILayout.Width(22));
-			bool scenePressed = GUILayout.Button(m_SceneButtonTextCache, LEFT_ALIGNED_BUTTON) || forceOpen;
-			bool loadPressed = GUILayout.Button(loadedButton, GUILayout.Width(20));
+			bool optionsPressed = GUILayout.Button(isPinned ? "O" : "@", SCENE_OPTIONS_BUTTON, GUILayout.Width(22));
+			bool scenePressed = GUILayout.Button(m_SceneButtonTextCache, SCENE_BUTTON) || forceOpen;
+			bool loadPressed = GUILayout.Button(loadedButton, SCENE_LOADED_BUTTON, GUILayout.Width(20));
 
+			GUI.backgroundColor = prevBackgroundColor;
+			SCENE_BUTTON.normal.textColor
+				= SCENE_OPTIONS_BUTTON.normal.textColor
+				= SCENE_LOADED_BUTTON.normal.textColor
+				= prevColor;
 
 			if (scenePressed || optionsPressed || loadPressed) {
 				// If scene was removed outside of Unity, the AssetModificationProcessor would not get notified.
@@ -843,6 +903,23 @@ namespace DevLocker.Tools.AssetsManagement
 
 				m_PersonalPrefs.SpaceBetweenGroupsPinned = EditorGUILayout.IntField(new GUIContent("Padding for pinned groups", spaceBetweenGroupsHint), m_PersonalPrefs.SpaceBetweenGroupsPinned);
 				m_PersonalPrefs.SpaceBetweenGroupsPinned = Mathf.Clamp(m_PersonalPrefs.SpaceBetweenGroupsPinned, 0, 16); // More round.
+
+				// Colorized Paths
+				{
+					var so = new SerializedObject(this);
+					var sp = so.FindProperty("m_PersonalPrefs").FindPropertyRelative("ColorizedPaths");
+
+					EditorGUILayout.PropertyField(sp, new GUIContent("Colorize Folders", "Set colors of scenes inside these folders."), true);
+
+					foreach(var cf in m_PersonalPrefs.ColorizedPaths) {
+						if (string.IsNullOrEmpty(cf.StartPath)) {
+							cf.BackgroundColor = Color.white;
+							cf.TextColor = Color.black;
+						}
+					}
+
+					so.ApplyModifiedProperties();
+				}
 			}
 
 			//
@@ -868,11 +945,17 @@ namespace DevLocker.Tools.AssetsManagement
 		{
 			m_ProjectExcludes.RemoveAll(string.IsNullOrWhiteSpace);
 
+			m_PersonalPrefs.DisplayRemoveFolders.RemoveAll(string.IsNullOrWhiteSpace);
+			m_PersonalPrefs.ColorizedPaths.RemoveAll(c => string.IsNullOrWhiteSpace(c.StartPath));
+
 			// Sort explicitly, so assets will change on reload.
 			SortScenes(m_Scenes);
 
 			RefreshDisplayNames(m_Scenes);
 			RefreshDisplayNames(m_Pinned);
+
+			RefreshColorizedPaths(m_Scenes);
+			RefreshColorizedPaths(m_Pinned);
 
 			EditorPrefs.SetString(PERSONAL_PREFERENCES_KEY, JsonUtility.ToJson(m_PersonalPrefs));
 
