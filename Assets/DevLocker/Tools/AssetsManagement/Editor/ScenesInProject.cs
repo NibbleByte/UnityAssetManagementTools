@@ -320,8 +320,11 @@ namespace DevLocker.Tools.AssetsManagement
 				m_ProjectExcludes = new List<string>();
 			}
 
-			m_Pinned = new List<SceneEntry>(File.ReadAllLines(SettingsPathPinnedScenes).Select(line => new SceneEntry(line)));
-			m_Scenes = new List<SceneEntry>(File.ReadAllLines(SettingsPathScenes).Select(line => new SceneEntry(line)));
+			if (File.Exists(SettingsPathPinnedScenes))
+				m_Pinned = new List<SceneEntry>(File.ReadAllLines(SettingsPathPinnedScenes).Select(line => new SceneEntry(line)));
+
+			if (File.Exists(SettingsPathScenes))
+				m_Scenes = new List<SceneEntry>(File.ReadAllLines(SettingsPathScenes).Select(line => new SceneEntry(line)));
 		}
 
 		private void InitializeData()
