@@ -3,7 +3,6 @@ using UnityEditor;
 using UnityEngine;
 using System;
 using System.Collections.Generic;
-using System.Text.RegularExpressions;
 using UnityEditor.SceneManagement;
 using UnityEngine.SceneManagement;
 using System.Linq;
@@ -28,6 +27,8 @@ namespace DevLocker.Tools.AssetsManagement
 			window.position = new Rect(window.position.xMin + 100f, window.position.yMin + 100f, 300f, 400f);
 		}
 
+		#region Types definitions
+
 		private enum PinnedOptions
 		{
 			Unpin,
@@ -46,11 +47,42 @@ namespace DevLocker.Tools.AssetsManagement
 			ByPath,
 		}
 
+		private enum SceneDisplay
+		{
+			SceneNames,
+			ScenePaths
+		}
+
+		[Serializable]
+		private class SceneEntry
+		{
+			public SceneEntry() { }
+			public SceneEntry(string path)
+			{
+				Path = path;
+				Name = System.IO.Path.GetFileNameWithoutExtension(Path);
+				Folder = System.IO.Path.GetDirectoryName(Path);
+			}
+
+			public string Path;
+			public string Name;
+			public string Folder;
+			public bool FirstInGroup = false;
+
+			public override string ToString()
+			{
+				return Path;
+			}
+		}
+
 		[Serializable]
 		private class PersonalPreferences
 		{
 			public SortType SortType = SortType.MostRecent;
-			public int ListCountLimit = 64;		// Round number... :D
+			public SceneDisplay SceneDisplay = SceneDisplay.SceneNames;
+			public int ListCountLimit = 64;     // Round number... :D
+			public int SpaceBetweenGroups = 6;  // Pixels between scenes with different folders.
+			public int SpaceBetweenGroupsPinned = 0;  // Same but for pinned.
 
 			public PersonalPreferences Clone()
 			{
@@ -58,8 +90,11 @@ namespace DevLocker.Tools.AssetsManagement
 			}
 		}
 
+		#endregion
+
 		private readonly char[] FILTER_WORD_SEPARATORS = new char[] { ' ', '\t' };
 		private GUIStyle LEFT_ALIGNED_BUTTON;
+		private GUIContent m_PreferencesButtonTextCache = new GUIContent("P", "Preferences...");
 		private GUIContent m_SceneButtonTextCache = new GUIContent();
 		private GUIContent m_AddSceneButtonTextCache = new GUIContent("+", "Load scene additively");
 		private GUIContent m_ActiveSceneButtonTextCache = new GUIContent("*", "Active scene (cannot unload)");
@@ -83,8 +118,9 @@ namespace DevLocker.Tools.AssetsManagement
 
 		[SerializeField]
 		private List<string> m_ProjectExcludes = new List<string>();	// Exclude paths OR filenames (per project preference)
-		private List<string> m_Pinned = new List<string>();
-		private List<string> m_Scenes = new List<string>();
+		private List<SceneEntry> m_Scenes = new List<SceneEntry>();
+		private List<SceneEntry> m_Pinned = new List<SceneEntry>();     // NOTE: m_Scenes & m_Pinned are not duplicated
+		private int m_PinnedGroupsCount = 0;
 
 		private bool m_ShowPreferences = false;
 		private const string PERSONAL_PREFERENCES_KEY = "ScenesInProject";
@@ -95,20 +131,20 @@ namespace DevLocker.Tools.AssetsManagement
 
 		private void StorePinned()
 		{
-			File.WriteAllLines(SettingsPathPinnedScenes, m_Pinned);
+			File.WriteAllLines(SettingsPathPinnedScenes, m_Pinned.Select(e => e.Path));
 		}
 
 		private void StoreScenes()
 		{
-			File.WriteAllLines(SettingsPathScenes, m_Scenes);
+			File.WriteAllLines(SettingsPathScenes, m_Scenes.Select(e => e.Path));
 		}
 
-		private static bool RemoveRedundant(List<string> list, List<string> scenesInDB)
+		private static bool RemoveRedundant(List<SceneEntry> list, List<string> scenesInDB)
 		{
 			bool removeSuccessful = false;
 
 			for (int i = list.Count - 1; i >= 0; i--) {
-				int sceneIndex = scenesInDB.IndexOf(list[i]);
+				int sceneIndex = scenesInDB.IndexOf(list[i].Path);
 				if (sceneIndex == -1) {
 					list.RemoveAt(i);
 					removeSuccessful = true;
@@ -118,22 +154,97 @@ namespace DevLocker.Tools.AssetsManagement
 			return removeSuccessful;
 		}
 
-		private void SortScenes(List<string> list)
+		private void SortScenes(List<SceneEntry> list)
 		{
 			switch(m_PersonalPrefs.SortType) {
 				case SortType.MostRecent:
 					break;
 
 				case SortType.ByFileName:
-					list.Sort((a, b) => Path.GetFileNameWithoutExtension(a).CompareTo(Path.GetFileNameWithoutExtension(b)));
+					list.Sort((a, b) => Path.GetFileNameWithoutExtension(a.Path).CompareTo(Path.GetFileNameWithoutExtension(b.Path)));
 					break;
 
 				case SortType.ByPath:
-					list.Sort((a, b) => a.CompareTo(b));
+					list.Sort((a, b) => a.Path.CompareTo(b.Path));
 					break;
 
 				default: throw new NotImplementedException();
 			}
+		}
+
+		private int RegroupScenes(List<SceneEntry> list)
+		{
+			int groupsCount = 0;
+
+			// Grouping scenes with little entries looks silly. Don't do grouping.
+			if (list.Count < 6) {
+				foreach(var sceneEntry in list) {
+					sceneEntry.FirstInGroup = false;
+				}
+
+				return groupsCount;
+			}
+
+			// Consider the following example of grouping.
+			// foo1    1
+			// foo2    2
+			// foo3    3
+			//
+			// bar1    1
+			// bar2    2
+			// bar3    3
+			//
+			// pepo    1
+			// gogo    1
+			// lili    1
+			//
+			// zzz1    1
+			// zzz2    2
+			// zzz3    3
+			// zzz4    4
+			//
+			// Roro8   1
+
+
+			list.First().FirstInGroup = false;
+			int entriesInGroup = 1;
+			string prevFolder, currFolder, nextFolder;
+
+
+			for (int i = 1; i < list.Count - 1; ++i) {
+				prevFolder = list[i - 1].Folder;
+				currFolder = list[i].Folder;
+				nextFolder = list[i + 1].Folder;
+
+				list[i].FirstInGroup = false;
+
+				if (prevFolder == currFolder) {
+					entriesInGroup++;
+					continue;
+				}
+
+				if (currFolder == nextFolder) {
+					list[i].FirstInGroup = true;
+					groupsCount++;
+					entriesInGroup = 1;
+					continue;
+				}
+
+				if (entriesInGroup > 1) {
+					list[i].FirstInGroup = true;
+					groupsCount++;
+					entriesInGroup = 1;
+					continue;
+				}
+			}
+
+			// Do last element
+			prevFolder = list[list.Count - 2].Folder;
+			currFolder = list[list.Count - 1].Folder;
+
+			list.Last().FirstInGroup = entriesInGroup > 1 && prevFolder != currFolder;
+
+			return groupsCount;
 		}
 
 		private void OnDisable()
@@ -162,8 +273,8 @@ namespace DevLocker.Tools.AssetsManagement
 				m_ProjectExcludes = new List<string>();
 			}
 
-			m_Pinned = new List<string>(File.ReadAllLines(SettingsPathPinnedScenes));
-			m_Scenes = new List<string>(File.ReadAllLines(SettingsPathScenes));
+			m_Pinned = new List<SceneEntry>(File.ReadAllLines(SettingsPathPinnedScenes).Select(line => new SceneEntry(line)));
+			m_Scenes = new List<SceneEntry>(File.ReadAllLines(SettingsPathScenes).Select(line => new SceneEntry(line)));
 		}
 
 		private void InitializeData()
@@ -187,12 +298,12 @@ namespace DevLocker.Tools.AssetsManagement
 			}
 
 			bool hasChanges = RemoveRedundant(m_Scenes, scenesInDB);
-			hasChanges = RemoveRedundant(m_Pinned, m_Scenes) || hasChanges;
+			hasChanges = RemoveRedundant(m_Pinned, scenesInDB) || hasChanges;
 
 			foreach (string s in scenesInDB) {
 
-				if (m_Scenes.IndexOf(s) == -1) {
-					m_Scenes.Add(s);
+				if (m_Scenes.Concat(m_Pinned).All(e => e.Path != s)) {
+					m_Scenes.Add(new SceneEntry(s));
 
 					hasChanges = true;
 				}
@@ -200,11 +311,14 @@ namespace DevLocker.Tools.AssetsManagement
 
 
 			if (hasChanges) {
+				SortScenes(m_Scenes);
+
 				StorePinned();
 				StoreScenes();
-
-				SortScenes(m_Scenes);
 			}
+
+			RegroupScenes(m_Scenes);
+			m_PinnedGroupsCount = RegroupScenes(m_Pinned);
 		}
 
 		private void InitializeStyles()
@@ -218,7 +332,6 @@ namespace DevLocker.Tools.AssetsManagement
 
 		private void OnGUI()
 		{
-
 			// Initialize on demand (not on OnEnable), to make sure everything is up and running.
 			if (!m_Initialized || AssetsChanged) {
 				InitializeData();
@@ -275,7 +388,7 @@ namespace DevLocker.Tools.AssetsManagement
 				Repaint();
 			}
 
-			if (GUILayout.Button("P", GUILayout.Width(20.0f))) {
+			if (GUILayout.Button(m_PreferencesButtonTextCache, GUILayout.Width(20.0f))) {
 				m_ShowPreferences = true;
 				GUIUtility.ExitGUI();
 			}
@@ -317,16 +430,18 @@ namespace DevLocker.Tools.AssetsManagement
 					m_ScrollPosPinned = EditorGUILayout.BeginScrollView(m_ScrollPosPinned, false, false, GUILayout.Height(scrollViewHeight));
 				}
 
-				bool hasChanges = RemoveRedundant(m_Pinned, m_Scenes);
-				if (hasChanges) {
-					StorePinned();
-				}
-
 				for (int i = 0; i < m_Pinned.Count; ++i) {
-					var scenePath = m_Pinned[i];
-					var sceneName = Path.GetFileNameWithoutExtension(scenePath);
+					var sceneEntry = m_Pinned[i];
+					var sceneName = Path.GetFileNameWithoutExtension(sceneEntry.Path);
 					if (!IsFilteredOut(sceneName, filterWords)) {
-						DrawSceneButtons(scenePath, sceneName, true, false);
+
+						if (sceneEntry.FirstInGroup && filterWords == null) {
+							if (m_PersonalPrefs.SpaceBetweenGroupsPinned > 0) {
+								GUILayout.Space(m_PersonalPrefs.SpaceBetweenGroupsPinned);
+							}
+						}
+
+						DrawSceneButtons(sceneEntry, true, false);
 					}
 				}
 
@@ -347,8 +462,8 @@ namespace DevLocker.Tools.AssetsManagement
 
 			var filteredCount = 0;
 			for (var i = 0; i < m_Scenes.Count; i++) {
-				var scenePath = m_Scenes[i];
-				var sceneName = Path.GetFileNameWithoutExtension(scenePath);
+				var sceneEntry = m_Scenes[i];
+				var sceneName = Path.GetFileNameWithoutExtension(sceneEntry.Path);
 
 				// Do filtering
 				if (IsFilteredOut(sceneName, filterWords))
@@ -356,10 +471,15 @@ namespace DevLocker.Tools.AssetsManagement
 
 				filteredCount++;
 
-				if (!m_Pinned.Contains(scenePath)) {
-					DrawSceneButtons(scenePath, sceneName, false, openFirstResult);
-					openFirstResult = false;
+
+				if (sceneEntry.FirstInGroup && filterWords == null) {
+					if (m_PersonalPrefs.SpaceBetweenGroups > 0) {
+						GUILayout.Space(m_PersonalPrefs.SpaceBetweenGroups);
+					}
 				}
+
+				DrawSceneButtons(sceneEntry, false, openFirstResult);
+				openFirstResult = false;
 
 				if (!m_ShowFullBigList && filteredCount >= m_PersonalPrefs.ListCountLimit)
 					break;
@@ -388,10 +508,11 @@ namespace DevLocker.Tools.AssetsManagement
 
 			var scenesCount = (filterWords == null)
 				? m_Pinned.Count
-				: m_Pinned.Count(scenePath => !IsFilteredOut(Path.GetFileNameWithoutExtension(scenePath), filterWords));
+				: m_Pinned.Count(se => !IsFilteredOut(se.Name, filterWords));
 
 			var pinnedTop = LINE_HEIGHT * 2 + 4; // Stuff before the pinned list (roughly).
-			var pinnedTotalHeight = LINE_HEIGHT * scenesCount;
+			var pinnedGroupsSpace = filterWords == null ? m_PinnedGroupsCount * m_PersonalPrefs.SpaceBetweenGroupsPinned : 0;
+			var pinnedTotalHeight = LINE_HEIGHT * scenesCount + pinnedGroupsSpace;
 
 			scrollViewHeight = Mathf.Max(position.height * 0.6f - pinnedTop, LINE_HEIGHT * 3);
 			return pinnedTotalHeight >= scrollViewHeight + LINE_PADDING;
@@ -412,24 +533,25 @@ namespace DevLocker.Tools.AssetsManagement
 			return false;
 		}
 
-		private void MoveSceneAtTopOfList(string scenePath)
+		private void MoveSceneAtTopOfList(SceneEntry sceneEntry)
 		{
-			int idx = m_Scenes.IndexOf(scenePath);
+			int idx = m_Scenes.IndexOf(sceneEntry);
 			if (idx >= 0) {
 				m_Scenes.RemoveAt(idx);
-				m_Scenes.Insert(0, scenePath);
+				m_Scenes.Insert(0, sceneEntry);
 			}
+
+			RegroupScenes(m_Scenes);
 		}
 
-		private void DrawSceneButtons(string scenePath, string sceneName, bool isPinned, bool forceOpen)
+		private void DrawSceneButtons(SceneEntry sceneEntry, bool isPinned, bool forceOpen)
 		{
-
 			EditorGUILayout.BeginHorizontal();
 
-			m_SceneButtonTextCache.text = sceneName;
-			m_SceneButtonTextCache.tooltip = scenePath;
+			m_SceneButtonTextCache.text = m_PersonalPrefs.SceneDisplay == SceneDisplay.SceneNames ? sceneEntry.Name : sceneEntry.Path;
+			m_SceneButtonTextCache.tooltip = sceneEntry.Path;
 
-			var scene = SceneManager.GetSceneByPath(scenePath);
+			var scene = SceneManager.GetSceneByPath(sceneEntry.Path);
 			bool isSceneLoaded = scene.IsValid();
 			bool isActiveScene = isSceneLoaded && scene == SceneManager.GetActiveScene();
 			var loadedButton = isSceneLoaded ? (isActiveScene ? m_ActiveSceneButtonTextCache : m_RemoveSceneButtonTextCache) : m_AddSceneButtonTextCache;
@@ -441,7 +563,7 @@ namespace DevLocker.Tools.AssetsManagement
 
 			if (scenePressed || optionsPressed || loadPressed) {
 				// If scene was removed outside of Unity, the AssetModificationProcessor would not get notified.
-				if (!File.Exists(scenePath)) {
+				if (!File.Exists(sceneEntry.Path)) {
 					AssetsChanged = true;
 					return;
 				}
@@ -451,20 +573,20 @@ namespace DevLocker.Tools.AssetsManagement
 
 
 				if (Event.current.shift) {
-					EditorUtility.RevealInFinder(scenePath);
+					EditorUtility.RevealInFinder(sceneEntry.Path);
 
 				} else if (Application.isPlaying || EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) {
 
 					if (Application.isPlaying) {
 						// Note: to do this, the scene must me added to the build settings list.
 						// Note2: Sometimes there are side effects with the lighting.
-						SceneManager.LoadSceneAsync(scenePath);
+						SceneManager.LoadSceneAsync(sceneEntry.Path);
 					} else {
-						EditorSceneManager.OpenScene(scenePath);
+						EditorSceneManager.OpenScene(sceneEntry.Path);
 					}
 
 					if (m_PersonalPrefs.SortType == SortType.MostRecent) {
-						MoveSceneAtTopOfList(scenePath);
+						MoveSceneAtTopOfList(sceneEntry);
 					}
 					//m_Filter = "";	// It's a feature. Sometimes you need to press on multiple scenes in a row.
 					GUI.FocusControl("");
@@ -474,11 +596,9 @@ namespace DevLocker.Tools.AssetsManagement
 
 			if (optionsPressed) {
 				if (isPinned) {
-					ShowPinnedOptions(scenePath);
+					ShowPinnedOptions(sceneEntry);
 				} else {
-					m_Pinned.Add(scenePath);
-					StorePinned();
-					StoreScenes();
+					PinScene(sceneEntry);
 				}
 			}
 
@@ -486,16 +606,16 @@ namespace DevLocker.Tools.AssetsManagement
 				if (Application.isPlaying) {
 					if (!isSceneLoaded) {
 						// Note: to do this, the scene must me added to the build settings list.
-						SceneManager.LoadScene(scenePath, LoadSceneMode.Additive);
+						SceneManager.LoadScene(sceneEntry.Path, LoadSceneMode.Additive);
 					} else if (!isActiveScene) {
 						SceneManager.UnloadSceneAsync(scene);
 					}
 				} else {
 					if (!isSceneLoaded) {
-						EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Additive);
+						EditorSceneManager.OpenScene(sceneEntry.Path, OpenSceneMode.Additive);
 
 						//if (m_PersonalPrefs.SortType == SortType.MostRecent) {
-						//	MoveSceneAtTopOfList(scenePath);
+						//	MoveSceneAtTopOfList(sceneEntry);
 						//}
 					} else if (!isActiveScene) {
 						EditorSceneManager.CloseScene(scene, true);
@@ -506,11 +626,31 @@ namespace DevLocker.Tools.AssetsManagement
 			EditorGUILayout.EndHorizontal();
 		}
 
+
+		private void PinScene(SceneEntry sceneEntry)
+		{
+			m_Scenes.Remove(sceneEntry);
+
+			int pinIndex = m_Pinned.FindLastIndex(s => s.Folder == sceneEntry.Folder);
+			if (pinIndex == -1) {
+				m_Pinned.Add(sceneEntry);
+			} else {
+				m_Pinned.Insert(pinIndex + 1, sceneEntry);
+			}
+
+			// Don't sort m_Scenes or m_Pinned.
+			RegroupScenes(m_Scenes);
+			m_PinnedGroupsCount = RegroupScenes(m_Pinned);
+
+			StorePinned();
+			StoreScenes();
+		}
+
 		// Show context menu with options.
-		private void ShowPinnedOptions(string scenePath)
+		private void ShowPinnedOptions(SceneEntry sceneEntry)
 		{
 			var menu = new GenericMenu();
-			int index = m_Pinned.IndexOf(scenePath);
+			int index = m_Pinned.IndexOf(sceneEntry);
 
 			foreach (PinnedOptions value in Enum.GetValues(typeof(PinnedOptions))) {
 				menu.AddItem(new GUIContent(ObjectNames.NicifyVariableName(value.ToString())), false, OnSelectPinnedOption, new KeyValuePair<PinnedOptions, int>(value, index));
@@ -523,11 +663,12 @@ namespace DevLocker.Tools.AssetsManagement
 		{
 			var pair = (KeyValuePair<PinnedOptions, int>)data;
 			int index = pair.Value;
-			string temp;
+			SceneEntry temp;
 
 			switch (pair.Key) {
 
 				case PinnedOptions.Unpin:
+					m_Scenes.Insert(0, m_Pinned[index]);
 					m_Pinned.RemoveAt(index);
 					break;
 
@@ -560,15 +701,22 @@ namespace DevLocker.Tools.AssetsManagement
 					break;
 
 				case PinnedOptions.ShowInExplorer:
-					EditorUtility.RevealInFinder(m_Pinned[index]);
+					EditorUtility.RevealInFinder(m_Pinned[index].Path);
 					break;
 
 				case PinnedOptions.ShowInProject:
-					EditorGUIUtility.PingObject(AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(m_Pinned[index]));
+					EditorGUIUtility.PingObject(AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(m_Pinned[index].Path));
 					break;
 			}
+
+			SortScenes(m_Scenes);
+
+			RegroupScenes(m_Scenes);
+			m_PinnedGroupsCount = RegroupScenes(m_Pinned);
+
 			StorePinned();
 			StoreScenes();
+
 			Repaint();
 		}
 
@@ -590,17 +738,9 @@ namespace DevLocker.Tools.AssetsManagement
 				var prevColor = GUI.backgroundColor;
 				GUI.backgroundColor = Color.green / 1.2f;
 				if (GUILayout.Button("Save And Close", GUILayout.MaxWidth(150f))) {
+					SaveAndClosePreferences();
 
-					m_ProjectExcludes.RemoveAll(string.IsNullOrWhiteSpace);
-					SortScenes(m_Scenes);
-
-					EditorPrefs.SetString(PERSONAL_PREFERENCES_KEY, JsonUtility.ToJson(m_PersonalPrefs));
-
-					File.WriteAllLines(PROJECT_EXCLUDES_PATH, m_ProjectExcludes);
 					GUI.FocusControl("");
-					m_ShowPreferences = false;
-					AssetsChanged = true;
-
 					EditorGUIUtility.ExitGUI();
 				}
 				GUI.backgroundColor = prevColor;
@@ -617,9 +757,17 @@ namespace DevLocker.Tools.AssetsManagement
 				EditorGUILayout.HelpBox("Hint: check the the tooltips.", MessageType.Info);
 
 				m_PersonalPrefs.SortType = (SortType) EditorGUILayout.EnumPopup(new GUIContent("Sort By", "How to sort the list of scenes (not the pinned ones).\nNOTE: Changing this might override the \"Most Recent\" sort done by now."), m_PersonalPrefs.SortType);
+				m_PersonalPrefs.SceneDisplay = (SceneDisplay) EditorGUILayout.EnumPopup(new GUIContent("Display", "How scenes should be displayed."), m_PersonalPrefs.SceneDisplay);
 
 				m_PersonalPrefs.ListCountLimit = EditorGUILayout.IntField(new GUIContent("Shown scenes limit", "If the scenes in the list are more than this value, they will be truncated (button \"Show All\" is shown).\nTruncated scenes still participate in the search.\n\nThis is very useful in a project with lots of scenes, where drawing large scrollable lists is expensive."), m_PersonalPrefs.ListCountLimit);
 				m_PersonalPrefs.ListCountLimit = Mathf.Clamp(m_PersonalPrefs.ListCountLimit, 0, 1024); // More round.
+
+				const string spaceBetweenGroupsHint = "Space in pixels added before every group of scenes.\nScenes in the same folder are considered as a group.";
+				m_PersonalPrefs.SpaceBetweenGroups = EditorGUILayout.IntField(new GUIContent("Padding for groups", spaceBetweenGroupsHint), m_PersonalPrefs.SpaceBetweenGroups);
+				m_PersonalPrefs.SpaceBetweenGroups = Mathf.Clamp(m_PersonalPrefs.SpaceBetweenGroups, 0, (int)EditorGUIUtility.singleLineHeight);
+
+				m_PersonalPrefs.SpaceBetweenGroupsPinned = EditorGUILayout.IntField(new GUIContent("Padding for pinned groups", spaceBetweenGroupsHint), m_PersonalPrefs.SpaceBetweenGroupsPinned);
+				m_PersonalPrefs.SpaceBetweenGroupsPinned = Mathf.Clamp(m_PersonalPrefs.SpaceBetweenGroupsPinned, 0, 16); // More round.
 			}
 
 			//
@@ -640,6 +788,20 @@ namespace DevLocker.Tools.AssetsManagement
 
 				EditorGUILayout.EndScrollView();
 			}
+		}
+
+		private void SaveAndClosePreferences()
+		{
+			m_ProjectExcludes.RemoveAll(string.IsNullOrWhiteSpace);
+
+			// Sort explicitly, so assets will change on reload.
+			SortScenes(m_Scenes);
+
+			EditorPrefs.SetString(PERSONAL_PREFERENCES_KEY, JsonUtility.ToJson(m_PersonalPrefs));
+
+			File.WriteAllLines(PROJECT_EXCLUDES_PATH, m_ProjectExcludes);
+			m_ShowPreferences = false;
+			AssetsChanged = true;
 		}
 
 		// NOTE: Copy pasted from SearchAssetsFilter.
