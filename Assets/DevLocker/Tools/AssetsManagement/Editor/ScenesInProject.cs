@@ -24,7 +24,7 @@ namespace DevLocker.Tools.AssetsManagement
 		private static void Init()
 		{
 			var window = (ScenesInProject)GetWindow(typeof(ScenesInProject), false, "Scenes In Project");
-			window.position = new Rect(window.position.xMin + 100f, window.position.yMin + 100f, 300f, 400f);
+			window.position = new Rect(window.position.xMin + 100f, window.position.yMin + 100f, 400f, 600f);
 		}
 
 		#region Types definitions
@@ -50,7 +50,8 @@ namespace DevLocker.Tools.AssetsManagement
 		private enum SceneDisplay
 		{
 			SceneNames,
-			ScenePaths
+			SceneNamesWithParents,
+			SceneFullPathsOmitFolders
 		}
 
 		[Serializable]
@@ -61,11 +62,12 @@ namespace DevLocker.Tools.AssetsManagement
 			{
 				Path = path;
 				Name = System.IO.Path.GetFileNameWithoutExtension(Path);
-				Folder = System.IO.Path.GetDirectoryName(Path);
+				Folder = Path.Substring(0, Path.LastIndexOf('/') - 1);
 			}
 
 			public string Path;
 			public string Name;
+			public string DisplayName;
 			public string Folder;
 			public bool FirstInGroup = false;
 
@@ -80,13 +82,18 @@ namespace DevLocker.Tools.AssetsManagement
 		{
 			public SortType SortType = SortType.MostRecent;
 			public SceneDisplay SceneDisplay = SceneDisplay.SceneNames;
+			public int DisplayParentsCount = 1;
+			public List<string> DisplayRemoveFolders = new List<string>() { "Assets" };
 			public int ListCountLimit = 64;     // Round number... :D
 			public int SpaceBetweenGroups = 6;  // Pixels between scenes with different folders.
 			public int SpaceBetweenGroupsPinned = 0;  // Same but for pinned.
 
 			public PersonalPreferences Clone()
 			{
-				return (PersonalPreferences)MemberwiseClone();
+				var clone = (PersonalPreferences)MemberwiseClone();
+				clone.DisplayRemoveFolders = new List<string>(DisplayRemoveFolders);
+
+				return clone;
 			}
 		}
 
@@ -114,6 +121,7 @@ namespace DevLocker.Tools.AssetsManagement
 		private string m_Filter = string.Empty;
 		private bool m_FocusFilterField = false; // HACK!
 
+		[SerializeField]
 		private PersonalPreferences m_PersonalPrefs = new PersonalPreferences();
 
 		[SerializeField]
@@ -247,6 +255,45 @@ namespace DevLocker.Tools.AssetsManagement
 			return groupsCount;
 		}
 
+		private void RefreshDisplayNames(List<SceneEntry> list)
+		{
+			foreach(var sceneEntry in list) {
+				switch(m_PersonalPrefs.SceneDisplay) {
+
+					case SceneDisplay.SceneNames:
+
+						sceneEntry.DisplayName = sceneEntry.Name;
+						break;
+
+					case SceneDisplay.SceneNamesWithParents:
+
+						int displayNameStartIndex = sceneEntry.Path.LastIndexOf('/');
+						for(int i = 0; i < m_PersonalPrefs.DisplayParentsCount; ++i) {
+							displayNameStartIndex = sceneEntry.Path.LastIndexOf('/', displayNameStartIndex - 1);
+							if (displayNameStartIndex == -1) {
+								break;
+							}
+						}
+
+						sceneEntry.DisplayName = sceneEntry.Path.Substring(displayNameStartIndex + 1);
+						sceneEntry.DisplayName = sceneEntry.DisplayName.Remove(sceneEntry.DisplayName.LastIndexOf('.'));
+
+						//sceneEntry.DisplayName = sceneEntry.DisplayName.Insert(sceneEntry.DisplayName.LastIndexOf('/') + 1, " ");
+
+						break;
+
+					case SceneDisplay.SceneFullPathsOmitFolders:
+
+						IEnumerable<string> pathFolders = sceneEntry.Folder.Split('/');
+						pathFolders = pathFolders.Where(f => !m_PersonalPrefs.DisplayRemoveFolders.Contains(f, StringComparer.OrdinalIgnoreCase));
+
+						sceneEntry.DisplayName = string.Join("/", pathFolders);
+						sceneEntry.DisplayName += "/" + sceneEntry.Name;	// Skip extension.
+						break;
+				}
+			}
+		}
+
 		private void OnDisable()
 		{
 			if (m_Initialized) {
@@ -310,8 +357,11 @@ namespace DevLocker.Tools.AssetsManagement
 			}
 
 
-			if (hasChanges) {
+			if (hasChanges || !m_Initialized) {
 				SortScenes(m_Scenes);
+
+				RefreshDisplayNames(m_Scenes);
+				RefreshDisplayNames(m_Pinned);
 
 				StorePinned();
 				StoreScenes();
@@ -427,7 +477,7 @@ namespace DevLocker.Tools.AssetsManagement
 
 				if (shouldScroll) {
 					EditorGUILayout.BeginVertical();
-					m_ScrollPosPinned = EditorGUILayout.BeginScrollView(m_ScrollPosPinned, false, false, GUILayout.Height(scrollViewHeight));
+					m_ScrollPosPinned = EditorGUILayout.BeginScrollView(m_ScrollPosPinned, false, false, GUIStyle.none, GUI.skin.verticalScrollbar, GUIStyle.none, GUILayout.Height(scrollViewHeight));
 				}
 
 				for (int i = 0; i < m_Pinned.Count; ++i) {
@@ -458,7 +508,7 @@ namespace DevLocker.Tools.AssetsManagement
 			GUILayout.Label("Scenes:", EditorStyles.boldLabel);
 
 			EditorGUILayout.BeginVertical();
-			m_ScrollPos = EditorGUILayout.BeginScrollView(m_ScrollPos, false, false);
+			m_ScrollPos = EditorGUILayout.BeginScrollView(m_ScrollPos, false, false, GUIStyle.none, GUI.skin.verticalScrollbar, GUIStyle.none);
 
 			var filteredCount = 0;
 			for (var i = 0; i < m_Scenes.Count; i++) {
@@ -548,7 +598,7 @@ namespace DevLocker.Tools.AssetsManagement
 		{
 			EditorGUILayout.BeginHorizontal();
 
-			m_SceneButtonTextCache.text = m_PersonalPrefs.SceneDisplay == SceneDisplay.SceneNames ? sceneEntry.Name : sceneEntry.Path;
+			m_SceneButtonTextCache.text = sceneEntry.DisplayName;
 			m_SceneButtonTextCache.tooltip = sceneEntry.Path;
 
 			var scene = SceneManager.GetSceneByPath(sceneEntry.Path);
@@ -749,6 +799,8 @@ namespace DevLocker.Tools.AssetsManagement
 
 			EditorGUILayout.Space();
 
+			m_PreferencesScroll = EditorGUILayout.BeginScrollView(m_PreferencesScroll);
+
 			//
 			// Personal Preferences
 			//
@@ -756,8 +808,28 @@ namespace DevLocker.Tools.AssetsManagement
 			{
 				EditorGUILayout.HelpBox("Hint: check the the tooltips.", MessageType.Info);
 
-				m_PersonalPrefs.SortType = (SortType) EditorGUILayout.EnumPopup(new GUIContent("Sort By", "How to sort the list of scenes (not the pinned ones).\nNOTE: Changing this might override the \"Most Recent\" sort done by now."), m_PersonalPrefs.SortType);
-				m_PersonalPrefs.SceneDisplay = (SceneDisplay) EditorGUILayout.EnumPopup(new GUIContent("Display", "How scenes should be displayed."), m_PersonalPrefs.SceneDisplay);
+				m_PersonalPrefs.SortType = (SortType) EditorGUILayout.EnumPopup(new GUIContent("Sort by", "How to sort the list of scenes (not the pinned ones).\nNOTE: Changing this might override the \"Most Recent\" sort done by now."), m_PersonalPrefs.SortType);
+				m_PersonalPrefs.SceneDisplay = (SceneDisplay) EditorGUILayout.EnumPopup(new GUIContent("Display entries", "How scenes should be displayed."), m_PersonalPrefs.SceneDisplay);
+
+				if (m_PersonalPrefs.SceneDisplay == SceneDisplay.SceneNamesWithParents) {
+					EditorGUI.indentLevel++;
+					m_PersonalPrefs.DisplayParentsCount = EditorGUILayout.IntField(new GUIContent("Parents depth", "How many parent folders to show.\nExample: Assets/Scenes/GUI/Foo.unity\n> 1 displays \"GUI/Foo\"\n> 2 displays \"Scenes/GUI/Foo\"\netc..."), m_PersonalPrefs.DisplayParentsCount);
+					m_PersonalPrefs.DisplayParentsCount = Mathf.Clamp(m_PersonalPrefs.DisplayParentsCount, 1, 1024); // More round.
+					EditorGUI.indentLevel--;
+				}
+
+				if (m_PersonalPrefs.SceneDisplay == SceneDisplay.SceneFullPathsOmitFolders) {
+					EditorGUI.indentLevel++;
+
+					var so = new SerializedObject(this);
+					var sp = so.FindProperty("m_PersonalPrefs").FindPropertyRelative("DisplayRemoveFolders");
+
+					EditorGUILayout.PropertyField(sp, new GUIContent("Omit folders", "List of folders that will be removed from the displayed path. Example: Remove \"Assets\" folder from the path."), true);
+
+					so.ApplyModifiedProperties();
+
+					EditorGUI.indentLevel--;
+				}
 
 				m_PersonalPrefs.ListCountLimit = EditorGUILayout.IntField(new GUIContent("Shown scenes limit", "If the scenes in the list are more than this value, they will be truncated (button \"Show All\" is shown).\nTruncated scenes still participate in the search.\n\nThis is very useful in a project with lots of scenes, where drawing large scrollable lists is expensive."), m_PersonalPrefs.ListCountLimit);
 				m_PersonalPrefs.ListCountLimit = Mathf.Clamp(m_PersonalPrefs.ListCountLimit, 0, 1024); // More round.
@@ -777,8 +849,6 @@ namespace DevLocker.Tools.AssetsManagement
 			{
 				EditorGUILayout.HelpBox("These settings will be saved in the ProjectSettings folder.\nFeel free to add them to your version control system.\nCoordinate any changes here with your team.", MessageType.Warning);
 
-				m_PreferencesScroll = EditorGUILayout.BeginScrollView(m_PreferencesScroll);
-
 				var so = new SerializedObject(this);
 				var sp = so.FindProperty("m_ProjectExcludes");
 
@@ -786,8 +856,9 @@ namespace DevLocker.Tools.AssetsManagement
 
 				so.ApplyModifiedProperties();
 
-				EditorGUILayout.EndScrollView();
 			}
+
+			EditorGUILayout.EndScrollView();
 		}
 
 		private void SaveAndClosePreferences()
@@ -796,6 +867,9 @@ namespace DevLocker.Tools.AssetsManagement
 
 			// Sort explicitly, so assets will change on reload.
 			SortScenes(m_Scenes);
+
+			RefreshDisplayNames(m_Scenes);
+			RefreshDisplayNames(m_Pinned);
 
 			EditorPrefs.SetString(PERSONAL_PREFERENCES_KEY, JsonUtility.ToJson(m_PersonalPrefs));
 
@@ -853,8 +927,24 @@ namespace DevLocker.Tools.AssetsManagement
 
 		public static AssetMoveResult OnWillMoveAsset(string oldPath, string newPath)
 		{
-			if (oldPath.EndsWith(".unity.meta") || oldPath.EndsWith(".unity"))
+			if (oldPath.EndsWith(".unity.meta") || oldPath.EndsWith(".unity")) {
 				ScenesInProject.AssetsChanged = true;
+			} else {
+				// Check if this is folder. Folders can contain scenes.
+				// This is not accurate, but fast?
+				for(int i = oldPath.Length - 1; i >= 0; --i) {
+					char ch = oldPath[i];
+					if (ch == '.')	// It's a file (hopefully)
+						break;
+
+					if (ch == '/') { // It's a folder
+						ScenesInProject.AssetsChanged = true;
+						break;
+					}
+				}
+			}
+
+
 
 			return AssetMoveResult.DidNotMove;
 		}
