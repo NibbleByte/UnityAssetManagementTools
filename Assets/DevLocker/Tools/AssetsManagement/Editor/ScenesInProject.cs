@@ -82,7 +82,7 @@ namespace DevLocker.Tools.AssetsManagement
 		[Serializable]
 		private class ColorizedPath
 		{
-			public string StartPath;
+			public string StartPath = string.Empty;
 			public Color BackgroundColor = Color.black;
 			public Color TextColor = Color.white;
 		}
@@ -110,12 +110,31 @@ namespace DevLocker.Tools.AssetsManagement
 			}
 		}
 
+		[Serializable]
+		private class ProjectPreferences
+		{
+			public List<ColorizedPath> ColorizedPaths = new List<ColorizedPath>();
+			public List<string> Exclude = new List<string>();   // Exclude paths OR filenames (per project preference)
+
+			public ProjectPreferences Clone()
+			{
+				var clone = (ProjectPreferences)MemberwiseClone();
+
+				clone.ColorizedPaths = new List<ColorizedPath>(this.ColorizedPaths);
+				clone.Exclude = new List<string>(this.Exclude);
+
+				return clone;
+			}
+		}
+
 		#endregion
 
 		private readonly char[] FILTER_WORD_SEPARATORS = new char[] { ' ', '\t' };
 		private GUIStyle SCENE_BUTTON;
 		private GUIStyle SCENE_OPTIONS_BUTTON;
 		private GUIStyle SCENE_LOADED_BUTTON;
+
+		private GUIStyle FOLD_OUT_BOLD;
 		private GUIContent m_PreferencesButtonTextCache = new GUIContent("P", "Preferences...");
 		private GUIContent m_SceneButtonTextCache = new GUIContent();
 		private GUIContent m_AddSceneButtonTextCache = new GUIContent("+", "Load scene additively");
@@ -140,14 +159,15 @@ namespace DevLocker.Tools.AssetsManagement
 		private PersonalPreferences m_PersonalPrefs = new PersonalPreferences();
 
 		[SerializeField]
-		private List<string> m_ProjectExcludes = new List<string>();	// Exclude paths OR filenames (per project preference)
+		private ProjectPreferences m_ProjectPrefs = new ProjectPreferences();
+
 		private List<SceneEntry> m_Scenes = new List<SceneEntry>();
 		private List<SceneEntry> m_Pinned = new List<SceneEntry>();     // NOTE: m_Scenes & m_Pinned are not duplicated
 		private int m_PinnedGroupsCount = 0;
 
 		private bool m_ShowPreferences = false;
 		private const string PERSONAL_PREFERENCES_KEY = "ScenesInProject";
-		private const string PROJECT_EXCLUDES_PATH = "ProjectSettings/ScenesInProject.Exclude.txt";
+		private const string PROJECT_PREFERENCES_PATH = "ProjectSettings/ScenesInProject.prefs";
 
 		private const string SettingsPathScenes = "Library/ScenesInProject.Scenes.txt";
 		private const string SettingsPathPinnedScenes = "Library/ScenesInProject.PinnedScenes.txt";
@@ -315,7 +335,7 @@ namespace DevLocker.Tools.AssetsManagement
 
 				sceneEntry.ColorizedPath = null;
 
-				foreach (var colors in m_PersonalPrefs.ColorizedPaths) {
+				foreach (var colors in m_PersonalPrefs.ColorizedPaths.Concat(m_ProjectPrefs.ColorizedPaths)) {
 
 					// Find best match for this scene entry.
 					if (sceneEntry.Path.StartsWith(colors.StartPath, StringComparison.OrdinalIgnoreCase)) {
@@ -348,10 +368,10 @@ namespace DevLocker.Tools.AssetsManagement
 				m_PersonalPrefs = new PersonalPreferences();
 			}
 
-			if (File.Exists(PROJECT_EXCLUDES_PATH)) {
-				m_ProjectExcludes = new List<string>(File.ReadAllLines(PROJECT_EXCLUDES_PATH));
+			if (File.Exists(PROJECT_PREFERENCES_PATH)) {
+				m_ProjectPrefs = JsonUtility.FromJson<ProjectPreferences>(File.ReadAllText(PROJECT_PREFERENCES_PATH));
 			} else {
-				m_ProjectExcludes = new List<string>();
+				m_ProjectPrefs = new ProjectPreferences();
 			}
 
 			if (File.Exists(SettingsPathPinnedScenes))
@@ -375,7 +395,7 @@ namespace DevLocker.Tools.AssetsManagement
 			foreach (string guid in sceneGuids) {
 				string scenePath = AssetDatabase.GUIDToAssetPath(guid);
 
-				if (ShouldExclude(m_ProjectExcludes, scenePath))
+				if (ShouldExclude(m_ProjectPrefs.Exclude, scenePath))
 					continue;
 
 				scenesInDB.Add(scenePath);
@@ -424,6 +444,9 @@ namespace DevLocker.Tools.AssetsManagement
 			SCENE_LOADED_BUTTON.alignment = TextAnchor.MiddleCenter;
 			SCENE_LOADED_BUTTON.padding.left = SCENE_LOADED_BUTTON.padding.right = 2;
 			SCENE_LOADED_BUTTON.contentOffset = new Vector2(1f, 0f);
+
+			FOLD_OUT_BOLD = new GUIStyle(EditorStyles.foldout);
+			FOLD_OUT_BOLD.fontStyle = FontStyle.Bold;
 		}
 
 
@@ -834,7 +857,12 @@ namespace DevLocker.Tools.AssetsManagement
 		}
 
 
+		private readonly GUIContent m_PreferencesColorizedFoldersLabelCache = new GUIContent("Colorize Folders", "Set colors of scenes inside these folders.");
 		private Vector2 m_PreferencesScroll;
+		private bool m_PreferencesPersonalFold = true;
+		private bool m_PreferencesProjectFold = true;
+		private bool m_PreferencesAboutFold = true;
+
 		private void DrawPreferences()
 		{
 			EditorGUILayout.Space();
@@ -867,8 +895,10 @@ namespace DevLocker.Tools.AssetsManagement
 			//
 			// Personal Preferences
 			//
-			EditorGUILayout.LabelField("Personal Preferences:", EditorStyles.boldLabel);
-			{
+			m_PreferencesPersonalFold = EditorGUILayout.Foldout(m_PreferencesPersonalFold, "Personal Preferences:", FOLD_OUT_BOLD);
+			if (m_PreferencesPersonalFold) {
+				EditorGUI.indentLevel++;
+
 				EditorGUILayout.HelpBox("Hint: check the the tooltips.", MessageType.Info);
 
 				m_PersonalPrefs.SortType = (SortType) EditorGUILayout.EnumPopup(new GUIContent("Sort by", "How to sort the list of scenes (not the pinned ones).\nNOTE: Changing this might override the \"Most Recent\" sort done by now."), m_PersonalPrefs.SortType);
@@ -907,9 +937,12 @@ namespace DevLocker.Tools.AssetsManagement
 				// Colorized Paths
 				{
 					var so = new SerializedObject(this);
-					var sp = so.FindProperty("m_PersonalPrefs").FindPropertyRelative("ColorizedPaths");
+					var sp = so.FindProperty("m_PersonalPrefs");
 
-					EditorGUILayout.PropertyField(sp, new GUIContent("Colorize Folders", "Set colors of scenes inside these folders."), true);
+					EditorGUILayout.PropertyField(sp.FindPropertyRelative("ColorizedPaths"), m_PreferencesColorizedFoldersLabelCache, true);
+
+					so.ApplyModifiedProperties();
+
 
 					foreach(var cf in m_PersonalPrefs.ColorizedPaths) {
 						if (string.IsNullOrEmpty(cf.StartPath)) {
@@ -917,36 +950,81 @@ namespace DevLocker.Tools.AssetsManagement
 							cf.TextColor = Color.black;
 						}
 					}
-
-					so.ApplyModifiedProperties();
 				}
+
+				EditorGUI.indentLevel--;
 			}
+
+			EditorGUILayout.Space();
 
 			//
 			// Project Preferences
 			//
-			EditorGUILayout.LabelField("Project Preferences:", EditorStyles.boldLabel);
-			{
+			m_PreferencesProjectFold = EditorGUILayout.Foldout(m_PreferencesProjectFold, "Project Preferences:", FOLD_OUT_BOLD);
+			if (m_PreferencesProjectFold) {
+
+				EditorGUI.indentLevel++;
+
 				EditorGUILayout.HelpBox("These settings will be saved in the ProjectSettings folder.\nFeel free to add them to your version control system.\nCoordinate any changes here with your team.", MessageType.Warning);
 
 				var so = new SerializedObject(this);
-				var sp = so.FindProperty("m_ProjectExcludes");
+				var sp = so.FindProperty("m_ProjectPrefs");
 
-				EditorGUILayout.PropertyField(sp, new GUIContent("Exclude paths", "Asset paths that will be ignored."), true);
+				EditorGUILayout.PropertyField(sp.FindPropertyRelative("ColorizedPaths"), m_PreferencesColorizedFoldersLabelCache, true);
+				EditorGUILayout.PropertyField(sp.FindPropertyRelative("Exclude"), new GUIContent("Exclude paths", "Asset paths that will be ignored."), true);
 
 				so.ApplyModifiedProperties();
 
+
+				foreach (var cf in m_ProjectPrefs.ColorizedPaths) {
+					if (string.IsNullOrEmpty(cf.StartPath)) {
+						cf.BackgroundColor = Color.white;
+						cf.TextColor = Color.black;
+					}
+				}
+
+				EditorGUI.indentLevel--;
 			}
+
+			EditorGUILayout.Space();
+
+			//
+			// About
+			//
+			m_PreferencesAboutFold = EditorGUILayout.Foldout(m_PreferencesAboutFold, "About:", FOLD_OUT_BOLD);
+			if (m_PreferencesAboutFold) {
+				EditorGUI.indentLevel++;
+
+				EditorGUILayout.LabelField("Created by Filip Slavov (NibbleByte)");
+
+				EditorGUILayout.BeginHorizontal();
+
+				if (GUILayout.Button("Plugin at Asset Store", GUILayout.MaxWidth(EditorGUIUtility.labelWidth))) {
+					EditorUtility.DisplayDialog("Under construction", "Asset Store plugin is coming really soon...", "Fine");
+				}
+
+				if (GUILayout.Button("Source at GitHub", GUILayout.MaxWidth(EditorGUIUtility.labelWidth))) {
+					var githubURL = "https://github.com/NibbleByte/AssetsManagementTools";
+					Application.OpenURL(githubURL);
+				}
+
+				EditorGUILayout.EndHorizontal();
+
+				EditorGUI.indentLevel--;
+			}
+
+			GUILayout.Space(16f);
 
 			EditorGUILayout.EndScrollView();
 		}
 
 		private void SaveAndClosePreferences()
 		{
-			m_ProjectExcludes.RemoveAll(string.IsNullOrWhiteSpace);
-
 			m_PersonalPrefs.DisplayRemoveFolders.RemoveAll(string.IsNullOrWhiteSpace);
 			m_PersonalPrefs.ColorizedPaths.RemoveAll(c => string.IsNullOrWhiteSpace(c.StartPath));
+
+			m_ProjectPrefs.Exclude.RemoveAll(string.IsNullOrWhiteSpace);
+			m_ProjectPrefs.ColorizedPaths.RemoveAll(c => string.IsNullOrWhiteSpace(c.StartPath));
 
 			// Sort explicitly, so assets will change on reload.
 			SortScenes(m_Scenes);
@@ -959,7 +1037,8 @@ namespace DevLocker.Tools.AssetsManagement
 
 			EditorPrefs.SetString(PERSONAL_PREFERENCES_KEY, JsonUtility.ToJson(m_PersonalPrefs));
 
-			File.WriteAllLines(PROJECT_EXCLUDES_PATH, m_ProjectExcludes);
+			File.WriteAllText(PROJECT_PREFERENCES_PATH, JsonUtility.ToJson(m_ProjectPrefs, true));
+
 			m_ShowPreferences = false;
 			AssetsChanged = true;
 		}
