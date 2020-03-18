@@ -25,6 +25,7 @@ namespace DevLocker.Tools.AssetsManagement
 		{
 			var window = (ScenesInProject)GetWindow(typeof(ScenesInProject), false, "Scenes In Project");
 			window.position = new Rect(window.position.xMin + 100f, window.position.yMin + 100f, 400f, 600f);
+			window.minSize = new Vector2(300f, 200f);
 		}
 
 		#region Types definitions
@@ -133,7 +134,9 @@ namespace DevLocker.Tools.AssetsManagement
 		private GUIStyle SCENE_BUTTON;
 		private GUIStyle SCENE_OPTIONS_BUTTON;
 		private GUIStyle SCENE_LOADED_BUTTON;
+		private float SCENE_BUTTON_HEIGHT;
 
+		private GUIStyle SPLITTER_STYLE;
 		private GUIStyle FOLD_OUT_BOLD;
 		private GUIContent m_PreferencesButtonTextCache = new GUIContent("P", "Preferences...");
 		private GUIContent m_SceneButtonTextCache = new GUIContent();
@@ -152,6 +155,9 @@ namespace DevLocker.Tools.AssetsManagement
 
 		private Vector2 m_ScrollPos;
 		private Vector2 m_ScrollPosPinned;
+		private Rect m_SplitterRect = new Rect(-1, -1, -1, -1);
+		private bool m_IsSplitterDragged;
+
 		private string m_Filter = string.Empty;
 		private bool m_FocusFilterField = false; // HACK!
 
@@ -285,7 +291,11 @@ namespace DevLocker.Tools.AssetsManagement
 			prevFolder = list[list.Count - 2].Folder;
 			currFolder = list[list.Count - 1].Folder;
 
-			list.Last().FirstInGroup = entriesInGroup > 1 && prevFolder != currFolder;
+			bool lastStandAlone = entriesInGroup > 1 && prevFolder != currFolder;
+			list.Last().FirstInGroup = lastStandAlone;	// Always set this to override old values!
+			if (lastStandAlone) {
+				groupsCount++;
+			}
 
 			return groupsCount;
 		}
@@ -437,6 +447,8 @@ namespace DevLocker.Tools.AssetsManagement
 			SCENE_BUTTON.alignment = TextAnchor.MiddleLeft;
 			SCENE_BUTTON.padding.left = 10;
 
+			SCENE_BUTTON_HEIGHT = EditorGUIUtility.singleLineHeight + SCENE_BUTTON.margin.top + SCENE_BUTTON.margin.bottom - 1;
+
 			SCENE_OPTIONS_BUTTON = new GUIStyle(GUI.skin.button);
 			SCENE_OPTIONS_BUTTON.alignment = TextAnchor.MiddleCenter;
 
@@ -445,11 +457,14 @@ namespace DevLocker.Tools.AssetsManagement
 			SCENE_LOADED_BUTTON.padding.left = SCENE_LOADED_BUTTON.padding.right = 2;
 			SCENE_LOADED_BUTTON.contentOffset = new Vector2(1f, 0f);
 
+			SPLITTER_STYLE = new GUIStyle(GUI.skin.box);
+			SPLITTER_STYLE.alignment = TextAnchor.MiddleCenter;
+			SPLITTER_STYLE.clipping = TextClipping.Overflow;
+			SPLITTER_STYLE.contentOffset = new Vector2(0f, -1f);
+
 			FOLD_OUT_BOLD = new GUIStyle(EditorStyles.foldout);
 			FOLD_OUT_BOLD.fontStyle = FontStyle.Bold;
 		}
-
-
 
 		private void OnGUI()
 		{
@@ -457,6 +472,7 @@ namespace DevLocker.Tools.AssetsManagement
 			if (!m_Initialized || AssetsChanged) {
 				InitializeData();
 				InitializeStyles();
+				InitializeSplitter();
 				m_Initialized = true;
 				AssetsChanged = false;
 			}
@@ -543,13 +559,13 @@ namespace DevLocker.Tools.AssetsManagement
 			if (m_Pinned.Count > 0) {
 				GUILayout.Label("Pinned:", EditorStyles.boldLabel);
 
-				float scrollViewHeight;
-				var shouldScroll = ShouldScrollPinned(filterWords, out scrollViewHeight);
+				// -3f is for clicks on the top edge of the splitter. It clicked on the button underneath.
+				float scrollViewHeight = m_SplitterRect.y - CalcPinnedViewStartY() - 3f;
 
-				if (shouldScroll) {
-					EditorGUILayout.BeginVertical();
-					m_ScrollPosPinned = EditorGUILayout.BeginScrollView(m_ScrollPosPinned, false, false, GUIStyle.none, GUI.skin.verticalScrollbar, GUIStyle.none, GUILayout.Height(scrollViewHeight));
-				}
+				//GUI.Box(new Rect(0, CalcPinnedViewStartY(), position.width, scrollViewHeight), "");
+
+				EditorGUILayout.BeginVertical();
+				m_ScrollPosPinned = EditorGUILayout.BeginScrollView(m_ScrollPosPinned, false, false, GUIStyle.none, GUI.skin.verticalScrollbar, GUIStyle.none, GUILayout.Height(scrollViewHeight));
 
 				for (int i = 0; i < m_Pinned.Count; ++i) {
 					var sceneEntry = m_Pinned[i];
@@ -566,12 +582,11 @@ namespace DevLocker.Tools.AssetsManagement
 					}
 				}
 
-				if (shouldScroll) {
-					EditorGUILayout.EndScrollView();
-					EditorGUILayout.EndVertical();
-				}
-			}
+				EditorGUILayout.EndScrollView();
+				EditorGUILayout.EndVertical();
 
+				DrawSplitter();
+			}
 
 			//
 			// Show all scenes
@@ -621,22 +636,78 @@ namespace DevLocker.Tools.AssetsManagement
 			EditorGUILayout.EndScrollView();
 		}
 
-		private bool ShouldScrollPinned(string[] filterWords, out float scrollViewHeight)
+		private void InitializeSplitter()
+		{
+			if (m_SplitterRect.width >= 0f)
+				return;
+
+			const float splitterHeight = 5f;
+			m_SplitterRect = new Rect(0, CalcPinnedViewStartY(), position.width, splitterHeight);
+		}
+
+		private float CalcPinnedViewStartY()
 		{
 			// Calculate pinned scroll view layout.
 			const float LINE_PADDING = 6;
 			float LINE_HEIGHT = EditorGUIUtility.singleLineHeight + LINE_PADDING;
 
-			var scenesCount = (filterWords == null)
-				? m_Pinned.Count
-				: m_Pinned.Count(se => !IsFilteredOut(se.Name, filterWords));
+			return LINE_HEIGHT * 2;
+		}
 
-			var pinnedTop = LINE_HEIGHT * 2 + 4; // Stuff before the pinned list (roughly).
-			var pinnedGroupsSpace = filterWords == null ? m_PinnedGroupsCount * m_PersonalPrefs.SpaceBetweenGroupsPinned : 0;
-			var pinnedTotalHeight = LINE_HEIGHT * scenesCount + pinnedGroupsSpace;
+		private float CalcSplitterMinY()
+		{
+			return CalcPinnedViewStartY() + EditorGUIUtility.singleLineHeight + 8f;
+		}
 
-			scrollViewHeight = Mathf.Max(position.height * 0.6f - pinnedTop, LINE_HEIGHT * 3);
-			return pinnedTotalHeight >= scrollViewHeight + LINE_PADDING;
+		private float CalcSplitterMaxY()
+		{
+			float BOTTOM_PADDING = SCENE_BUTTON_HEIGHT * 3 + 8f;
+			float minY = CalcSplitterMinY();
+			var pinnedGroupsSpace = m_PinnedGroupsCount * m_PersonalPrefs.SpaceBetweenGroupsPinned;
+
+			return Mathf.Min(minY + SCENE_BUTTON_HEIGHT * (m_Pinned.Count - 1) + pinnedGroupsSpace, position.height - BOTTOM_PADDING);
+		}
+
+		private void DrawSplitter()
+		{
+			m_SplitterRect.width = 150f;
+			m_SplitterRect.x = (position.width - m_SplitterRect.width) / 2f;
+
+			GUI.Box(m_SplitterRect, "- - - - - - -", SPLITTER_STYLE);
+			//GUI.DrawTexture(m_SplitterRect, EditorGUIUtility.whiteTexture);
+			EditorGUIUtility.AddCursorRect(m_SplitterRect, MouseCursor.ResizeVertical);
+
+			if (Event.current.type == EventType.MouseDown && m_SplitterRect.Contains(Event.current.mousePosition)) {
+				m_IsSplitterDragged = true;
+			}
+
+			float minY = CalcSplitterMinY();
+			float maxY = CalcSplitterMaxY();
+
+			if (m_IsSplitterDragged) {
+				float splitterY = Mathf.Clamp(Event.current.mousePosition.y - Mathf.Round(m_SplitterRect.height / 2f), minY, maxY);
+				m_SplitterRect.Set(m_SplitterRect.x, splitterY, m_SplitterRect.width, m_SplitterRect.height);
+				Repaint();
+			} else {
+				// Sync with window size every time.
+				m_SplitterRect.y = Mathf.Max(minY, Mathf.Min(m_SplitterRect.y, maxY));
+			}
+
+			if (Event.current.type == EventType.MouseUp) {
+				m_IsSplitterDragged = false;
+			}
+		}
+
+		private bool ShouldAutoSnapSplitter()
+		{
+			float maxY = CalcSplitterMaxY();
+
+			return maxY - m_SplitterRect.y < 6f;
+		}
+
+		private void AutoSnapSplitter()
+		{
+			m_SplitterRect.y = CalcSplitterMaxY();
 		}
 
 		private bool IsFilteredOut(string sceneName, string[] filterWords)
@@ -765,6 +836,7 @@ namespace DevLocker.Tools.AssetsManagement
 
 		private void PinScene(SceneEntry sceneEntry)
 		{
+			bool shouldAutoSnapSplitter = ShouldAutoSnapSplitter();
 			m_Scenes.Remove(sceneEntry);
 
 			int pinIndex = m_Pinned.FindLastIndex(s => s.Folder == sceneEntry.Folder);
@@ -777,6 +849,10 @@ namespace DevLocker.Tools.AssetsManagement
 			// Don't sort m_Scenes or m_Pinned.
 			RegroupScenes(m_Scenes);
 			m_PinnedGroupsCount = RegroupScenes(m_Pinned);
+
+			if (shouldAutoSnapSplitter) {
+				AutoSnapSplitter();
+			}
 
 			StorePinned();
 			StoreScenes();
@@ -804,8 +880,15 @@ namespace DevLocker.Tools.AssetsManagement
 			switch (pair.Key) {
 
 				case PinnedOptions.Unpin:
+					bool shouldAutoSnapSplitter = ShouldAutoSnapSplitter();
+
 					m_Scenes.Insert(0, m_Pinned[index]);
 					m_Pinned.RemoveAt(index);
+
+					if (shouldAutoSnapSplitter) {
+						AutoSnapSplitter();
+					}
+
 					break;
 
 				case PinnedOptions.MoveUp:
