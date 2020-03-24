@@ -33,8 +33,6 @@ namespace DevLocker.Tools.AssetsManagement
 		private enum PinnedOptions
 		{
 			Unpin,
-			MoveUp,
-			MoveDown,
 			MoveFirst,
 			MoveLast,
 			ShowInExplorer,
@@ -137,6 +135,7 @@ namespace DevLocker.Tools.AssetsManagement
 		private float SCENE_BUTTON_HEIGHT;
 
 		private GUIStyle SPLITTER_STYLE;
+		private GUIStyle DRAGHANDLER_STYLE;
 		private GUIStyle FOLD_OUT_BOLD;
 		private GUIContent m_PreferencesButtonTextCache = new GUIContent("P", "Preferences...");
 		private GUIContent m_SceneButtonTextCache = new GUIContent();
@@ -170,6 +169,9 @@ namespace DevLocker.Tools.AssetsManagement
 		private List<SceneEntry> m_Scenes = new List<SceneEntry>();
 		private List<SceneEntry> m_Pinned = new List<SceneEntry>();     // NOTE: m_Scenes & m_Pinned are not duplicated
 		private int m_PinnedGroupsCount = 0;
+
+		[NonSerialized]
+		private SceneEntry m_DraggedEntity;
 
 		private bool m_ShowPreferences = false;
 		private const string PERSONAL_PREFERENCES_KEY = "ScenesInProject";
@@ -462,6 +464,9 @@ namespace DevLocker.Tools.AssetsManagement
 			SPLITTER_STYLE.clipping = TextClipping.Overflow;
 			SPLITTER_STYLE.contentOffset = new Vector2(0f, -1f);
 
+			DRAGHANDLER_STYLE = new GUIStyle(GUI.skin.GetStyle("RL DragHandle"));
+			//DRAGHANDLER_STYLE.contentOffset = new Vector2(0f, Mathf.FloorToInt(EditorGUIUtility.singleLineHeight / 2f) + 2);
+
 			FOLD_OUT_BOLD = new GUIStyle(EditorStyles.foldout);
 			FOLD_OUT_BOLD.fontStyle = FontStyle.Bold;
 		}
@@ -482,19 +487,19 @@ namespace DevLocker.Tools.AssetsManagement
 				return;
 			}
 
-			EditorGUILayout.BeginHorizontal();
+			HandleScenesDrag();
 
 			bool openFirstResult;
 			string[] filterWords;
 			DrawControls(out openFirstResult, out filterWords);
 
 			DrawSceneLists(openFirstResult, filterWords);
-
-			EditorGUILayout.EndVertical();
 		}
 
 		private void DrawControls(out bool openFirstResult, out string[] filterWords)
 		{
+			EditorGUILayout.BeginHorizontal();
+
 			//
 			// Draw Filter
 			//
@@ -578,7 +583,7 @@ namespace DevLocker.Tools.AssetsManagement
 							}
 						}
 
-						DrawSceneButtons(sceneEntry, true, false);
+						DrawSceneButtons(sceneEntry, true, filterWords == null, false);
 					}
 				}
 
@@ -614,7 +619,7 @@ namespace DevLocker.Tools.AssetsManagement
 					}
 				}
 
-				DrawSceneButtons(sceneEntry, false, openFirstResult);
+				DrawSceneButtons(sceneEntry, false, filterWords == null && m_PersonalPrefs.SortType == SortType.MostRecent, openFirstResult);
 				openFirstResult = false;
 
 				if (!m_ShowFullBigList && filteredCount >= m_PersonalPrefs.ListCountLimit)
@@ -634,6 +639,91 @@ namespace DevLocker.Tools.AssetsManagement
 			}
 
 			EditorGUILayout.EndScrollView();
+			EditorGUILayout.EndVertical();
+		}
+
+		private void HandleScenesDrag()
+		{
+			if (m_DraggedEntity == null)
+				return;
+
+			if (Event.current.type == EventType.MouseUp) {
+				m_DraggedEntity = null;
+
+				StorePinned();
+				StoreScenes();
+
+				return;
+			}
+
+			Repaint();
+
+			if (Event.current.type != EventType.Repaint)
+				return;
+
+
+
+			if (m_Pinned.Contains(m_DraggedEntity)) {
+
+				var pinnedStartY = CalcPinnedViewStartY() + 3f - m_ScrollPosPinned.y;
+
+				bool changed = HandleScenesListDrag(m_Pinned, pinnedStartY, m_PersonalPrefs.SpaceBetweenGroupsPinned);
+				if (changed) {
+					m_PinnedGroupsCount = RegroupScenes(m_Pinned);
+
+					GUIUtility.ExitGUI();
+				}
+
+			} else {
+
+				var scenesStartY = m_Pinned.Count == 0
+					? CalcPinnedViewStartY() + 3f
+					: m_SplitterRect.y + m_SplitterRect.height + EditorGUIUtility.singleLineHeight + 5f;
+				scenesStartY -= m_ScrollPos.y;
+
+				bool changed = HandleScenesListDrag(m_Scenes, scenesStartY, m_PersonalPrefs.SpaceBetweenGroups);
+				if (changed) {
+					SortScenes(m_Scenes);
+					RegroupScenes(m_Scenes);
+
+					GUIUtility.ExitGUI();
+				}
+			}
+		}
+
+		private bool HandleScenesListDrag(List<SceneEntry> scenes, float startY, float groupSpace)
+		{
+			var entryRect = new Rect(0, startY, position.width, EditorGUIUtility.singleLineHeight + 4f);
+
+			int groupsCount = 0;
+			for (int i = 0; i < scenes.Count; ++i) {
+				var entry = scenes[i];
+
+				if (entry.FirstInGroup) {
+					groupsCount++;
+				}
+				entryRect.y = startY + entryRect.height * i + groupsCount * groupSpace;
+
+				if (entryRect.Contains(Event.current.mousePosition)) {
+
+					if (entry != m_DraggedEntity) {
+						bool shouldAutoSnapSplitter = ShouldAutoSnapSplitter();
+
+						scenes.Remove(m_DraggedEntity);
+						scenes.Insert(i, m_DraggedEntity);
+
+						if (shouldAutoSnapSplitter) {
+							AutoSnapSplitter();
+						}
+
+						return true;
+					}
+
+					return false;
+				}
+			}
+
+			return false;
 		}
 
 		private void InitializeSplitter()
@@ -736,7 +826,7 @@ namespace DevLocker.Tools.AssetsManagement
 			RegroupScenes(m_Scenes);
 		}
 
-		private void DrawSceneButtons(SceneEntry sceneEntry, bool isPinned, bool forceOpen)
+		private void DrawSceneButtons(SceneEntry sceneEntry, bool isPinned, bool allowDrag, bool forceOpen)
 		{
 			EditorGUILayout.BeginHorizontal();
 
@@ -760,7 +850,20 @@ namespace DevLocker.Tools.AssetsManagement
 
 			bool optionsPressed = GUILayout.Button(isPinned ? "O" : "@", SCENE_OPTIONS_BUTTON, GUILayout.Width(22));
 			bool scenePressed = GUILayout.Button(m_SceneButtonTextCache, SCENE_BUTTON) || forceOpen;
+			var dragRect = EditorGUILayout.GetControlRect(false, GUILayout.Width(5f), GUILayout.Height(EditorGUIUtility.singleLineHeight + 2f));
 			bool loadPressed = GUILayout.Button(loadedButton, SCENE_LOADED_BUTTON, GUILayout.Width(20));
+
+			if (allowDrag) {
+				float paddingTop = Mathf.Floor(EditorGUIUtility.singleLineHeight / 2);
+				dragRect.y += paddingTop;
+				GUI.Box(dragRect, string.Empty, DRAGHANDLER_STYLE);
+				dragRect.y -= paddingTop;
+				EditorGUIUtility.AddCursorRect(dragRect, MouseCursor.ResizeVertical);
+
+				if (Event.current.type == EventType.MouseDown && dragRect.Contains(Event.current.mousePosition)) {
+					m_DraggedEntity = sceneEntry;
+				}
+			}
 
 			GUI.backgroundColor = prevBackgroundColor;
 			SCENE_BUTTON.normal.textColor
@@ -875,7 +978,6 @@ namespace DevLocker.Tools.AssetsManagement
 		{
 			var pair = (KeyValuePair<PinnedOptions, int>)data;
 			int index = pair.Value;
-			SceneEntry temp;
 
 			switch (pair.Key) {
 
@@ -889,24 +991,6 @@ namespace DevLocker.Tools.AssetsManagement
 						AutoSnapSplitter();
 					}
 
-					break;
-
-				case PinnedOptions.MoveUp:
-					if (index == 0)
-						return;
-
-					temp = m_Pinned[index];
-					m_Pinned[index] = m_Pinned[index - 1];
-					m_Pinned[index - 1] = temp;
-					break;
-
-				case PinnedOptions.MoveDown:
-					if (index == m_Pinned.Count - 1)
-						return;
-
-					temp = m_Pinned[index];
-					m_Pinned[index] = m_Pinned[index + 1];
-					m_Pinned[index + 1] = temp;
 					break;
 
 				case PinnedOptions.MoveFirst:
