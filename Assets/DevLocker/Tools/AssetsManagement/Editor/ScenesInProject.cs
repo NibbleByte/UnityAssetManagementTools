@@ -99,6 +99,8 @@ namespace DevLocker.Tools.AssetsManagement
 
 			public List<ColorizedPath> ColorizedPaths = new List<ColorizedPath>();
 
+			public float SplitterY = -1;			// Hidden preference.
+
 			public PersonalPreferences Clone()
 			{
 				var clone = (PersonalPreferences)MemberwiseClone();
@@ -188,6 +190,13 @@ namespace DevLocker.Tools.AssetsManagement
 		private void StoreScenes()
 		{
 			File.WriteAllLines(SettingsPathScenes, m_Scenes.Select(e => e.Path));
+		}
+
+		private void StorePrefs()
+		{
+			EditorPrefs.SetString(PERSONAL_PREFERENCES_KEY, JsonUtility.ToJson(m_PersonalPrefs));
+
+			File.WriteAllText(PROJECT_PREFERENCES_PATH, JsonUtility.ToJson(m_ProjectPrefs, true));
 		}
 
 		private static bool RemoveRedundant(List<SceneEntry> list, List<string> scenesInDB)
@@ -380,6 +389,8 @@ namespace DevLocker.Tools.AssetsManagement
 				m_PersonalPrefs = new PersonalPreferences();
 			}
 
+			InitializeSplitter(m_PersonalPrefs.SplitterY);
+
 			if (File.Exists(PROJECT_PREFERENCES_PATH)) {
 				m_ProjectPrefs = JsonUtility.FromJson<ProjectPreferences>(File.ReadAllText(PROJECT_PREFERENCES_PATH));
 			} else {
@@ -477,7 +488,6 @@ namespace DevLocker.Tools.AssetsManagement
 			if (!m_Initialized || AssetsChanged) {
 				InitializeData();
 				InitializeStyles();
-				InitializeSplitter();
 				m_Initialized = true;
 				AssetsChanged = false;
 			}
@@ -726,13 +736,14 @@ namespace DevLocker.Tools.AssetsManagement
 			return false;
 		}
 
-		private void InitializeSplitter()
+		private void InitializeSplitter(float startY)
 		{
-			if (m_SplitterRect.width >= 0f)
-				return;
+			if (startY < 0f) {
+				startY = CalcPinnedViewStartY();
+			}
 
 			const float splitterHeight = 5f;
-			m_SplitterRect = new Rect(0, CalcPinnedViewStartY(), position.width, splitterHeight);
+			m_SplitterRect = new Rect(0, startY, position.width, splitterHeight);
 		}
 
 		private float CalcPinnedViewStartY()
@@ -783,8 +794,10 @@ namespace DevLocker.Tools.AssetsManagement
 				m_SplitterRect.y = Mathf.Max(minY, Mathf.Min(m_SplitterRect.y, maxY));
 			}
 
-			if (Event.current.type == EventType.MouseUp) {
+			if (m_IsSplitterDragged && Event.current.type == EventType.MouseUp) {
 				m_IsSplitterDragged = false;
+				m_PersonalPrefs.SplitterY = m_SplitterRect.y;
+				StorePrefs();
 			}
 		}
 
@@ -798,6 +811,9 @@ namespace DevLocker.Tools.AssetsManagement
 		private void AutoSnapSplitter()
 		{
 			m_SplitterRect.y = CalcSplitterMaxY();
+
+			m_PersonalPrefs.SplitterY = m_SplitterRect.y;
+			StorePrefs();
 		}
 
 		private bool IsFilteredOut(string sceneName, string[] filterWords)
@@ -1202,9 +1218,7 @@ namespace DevLocker.Tools.AssetsManagement
 			RefreshColorizedPaths(m_Scenes);
 			RefreshColorizedPaths(m_Pinned);
 
-			EditorPrefs.SetString(PERSONAL_PREFERENCES_KEY, JsonUtility.ToJson(m_PersonalPrefs));
-
-			File.WriteAllText(PROJECT_PREFERENCES_PATH, JsonUtility.ToJson(m_ProjectPrefs, true));
+			StorePrefs();
 
 			m_ShowPreferences = false;
 			AssetsChanged = true;
