@@ -85,7 +85,13 @@ namespace DevLocker.Tools.AssetsManagement
 			public string DisplayName;
 			public bool FirstInGroup = false;
 
-			public ColorizedPath ColorizedPath;
+			public ColorizePattern ColorizePattern;
+
+			public SceneEntry Clone()
+			{
+				var clone = (SceneEntry) MemberwiseClone();
+				return clone;
+			}
 
 			public override string ToString()
 			{
@@ -94,9 +100,10 @@ namespace DevLocker.Tools.AssetsManagement
 		}
 
 		[Serializable]
-		private class ColorizedPath
+		private class ColorizePattern
 		{
-			public string StartPath = string.Empty;
+			[Tooltip("Relative path (contains '/') or name match. Can have multiple patterns separated by ';'.")]
+			public string Patterns = string.Empty;
 			public Color BackgroundColor = Color.black;
 			public Color TextColor = Color.white;
 		}
@@ -112,7 +119,7 @@ namespace DevLocker.Tools.AssetsManagement
 			public int SpaceBetweenGroups = 6;  // Pixels between scenes with different folders.
 			public int SpaceBetweenGroupsPinned = 0;  // Same but for pinned.
 
-			public List<ColorizedPath> ColorizedPaths = new List<ColorizedPath>();
+			public List<ColorizePattern> ColorizePatterns = new List<ColorizePattern>();
 
 			public float SplitterY = -1;			// Hidden preference.
 
@@ -120,7 +127,7 @@ namespace DevLocker.Tools.AssetsManagement
 			{
 				var clone = (PersonalPreferences)MemberwiseClone();
 				clone.DisplayRemoveFolders = new List<string>(DisplayRemoveFolders);
-				clone.ColorizedPaths = new List<ColorizedPath>(ColorizedPaths);
+				clone.ColorizePatterns = new List<ColorizePattern>(ColorizePatterns);
 
 				return clone;
 			}
@@ -129,14 +136,14 @@ namespace DevLocker.Tools.AssetsManagement
 		[Serializable]
 		private class ProjectPreferences
 		{
-			public List<ColorizedPath> ColorizedPaths = new List<ColorizedPath>();
+			public List<ColorizePattern> ColorizePatterns = new List<ColorizePattern>();
 			public List<string> Exclude = new List<string>();   // Exclude paths OR filenames (per project preference)
 
 			public ProjectPreferences Clone()
 			{
 				var clone = (ProjectPreferences)MemberwiseClone();
 
-				clone.ColorizedPaths = new List<ColorizedPath>(this.ColorizedPaths);
+				clone.ColorizePatterns = new List<ColorizePattern>(this.ColorizePatterns);
 				clone.Exclude = new List<string>(this.Exclude);
 
 				return clone;
@@ -364,19 +371,47 @@ namespace DevLocker.Tools.AssetsManagement
 			}
 		}
 
-		private void RefreshColorizedPaths(List<SceneEntry> list)
+		private void RefreshColorizePatterns(List<SceneEntry> list)
 		{
+			var splitters = new char[] { ';' };
+
 			foreach(var sceneEntry in list) {
 
-				sceneEntry.ColorizedPath = null;
+				sceneEntry.ColorizePattern = null;
 
-				foreach (var colors in m_PersonalPrefs.ColorizedPaths.Concat(m_ProjectPrefs.ColorizedPaths)) {
+				foreach (var colors in m_ProjectPrefs.ColorizePatterns.Concat(m_PersonalPrefs.ColorizePatterns)) {
 
-					// Find best match for this scene entry.
-					if (sceneEntry.Path.StartsWith(colors.StartPath, StringComparison.OrdinalIgnoreCase)) {
+					var patterns = colors.Patterns.Split(splitters, StringSplitOptions.RemoveEmptyEntries);
 
-						if (sceneEntry.ColorizedPath == null || sceneEntry.ColorizedPath.StartPath.Length < colors.StartPath.Length) {
-							sceneEntry.ColorizedPath = colors;
+					foreach (var pattern in patterns) {
+
+						bool isPath = pattern.Contains("/");
+
+						// Find best match for this scene entry.
+						if (isPath) {
+							if (sceneEntry.Path.StartsWith(pattern, StringComparison.OrdinalIgnoreCase)) {
+
+								var prevPattern = sceneEntry.ColorizePattern?.Patterns ?? string.Empty;
+
+								// Allow only better path match to override previous - only paths, no names.
+								// Note: This doesn't work for multiple patterns.
+								var betterPath = prevPattern.Contains("/") && prevPattern.Length <= pattern.Length;
+
+								if (sceneEntry.ColorizePattern == null || betterPath) {
+									sceneEntry.ColorizePattern = colors;
+								}
+
+								break;
+							}
+
+						} else {
+
+							// This is always preferred to path.
+							if (sceneEntry.Name.IndexOf(pattern, StringComparison.OrdinalIgnoreCase) != -1) {
+								sceneEntry.ColorizePattern = colors;
+
+								break;
+							}
 						}
 					}
 				}
@@ -457,8 +492,8 @@ namespace DevLocker.Tools.AssetsManagement
 				RefreshDisplayNames(m_Scenes);
 				RefreshDisplayNames(m_Pinned);
 
-				RefreshColorizedPaths(m_Scenes);
-				RefreshColorizedPaths(m_Pinned);
+				RefreshColorizePatterns(m_Scenes);
+				RefreshColorizePatterns(m_Pinned);
 
 				StoreAllScenes();
 			}
@@ -501,11 +536,14 @@ namespace DevLocker.Tools.AssetsManagement
 				if (instance == this)
 					continue;
 
-				instance.m_Pinned = new List<SceneEntry>(m_Pinned);
-				instance.m_Scenes = new List<SceneEntry>(m_Scenes);
+				instance.m_Pinned = new List<SceneEntry>(m_Pinned.Select(e => e.Clone()));
+				instance.m_Scenes = new List<SceneEntry>(m_Scenes.Select(e => e.Clone()));
 				instance.m_PersonalPrefs = m_PersonalPrefs.Clone();
 				instance.m_ProjectPrefs = m_ProjectPrefs.Clone();
 				instance.m_PinnedGroupsCount = m_PinnedGroupsCount;
+
+				instance.RefreshColorizePatterns(instance.m_Pinned);
+				instance.RefreshColorizePatterns(instance.m_Scenes);
 
 				instance.Repaint();
 			}
@@ -890,12 +928,12 @@ namespace DevLocker.Tools.AssetsManagement
 
 			var prevBackgroundColor = GUI.backgroundColor;
 			var prevColor = SCENE_BUTTON.normal.textColor;
-			if (sceneEntry.ColorizedPath != null && !string.IsNullOrEmpty(sceneEntry.ColorizedPath.StartPath)) {
-				GUI.backgroundColor = sceneEntry.ColorizedPath.BackgroundColor;
+			if (sceneEntry.ColorizePattern != null && !string.IsNullOrEmpty(sceneEntry.ColorizePattern.Patterns)) {
+				GUI.backgroundColor = sceneEntry.ColorizePattern.BackgroundColor;
 				SCENE_BUTTON.normal.textColor
 					= SCENE_OPTIONS_BUTTON.normal.textColor
 					= SCENE_LOADED_BUTTON.normal.textColor
-					= sceneEntry.ColorizedPath.TextColor;
+					= sceneEntry.ColorizePattern.TextColor;
 			}
 
 			if (sceneEntry == m_DraggedEntity) {
@@ -1083,7 +1121,7 @@ namespace DevLocker.Tools.AssetsManagement
 		}
 
 
-		private readonly GUIContent m_PreferencesColorizedFoldersLabelCache = new GUIContent("Colorize Folders", "Set colors of scenes inside these folders.");
+		private readonly GUIContent m_PreferencesColorizePatternsLabelCache = new GUIContent("Colorize Entries", "Set colors of scenes based on a folder or name patterns.");
 		private Vector2 m_PreferencesScroll;
 		private bool m_PreferencesPersonalFold = true;
 		private bool m_PreferencesProjectFold = true;
@@ -1160,18 +1198,18 @@ namespace DevLocker.Tools.AssetsManagement
 				m_PersonalPrefs.SpaceBetweenGroupsPinned = EditorGUILayout.IntField(new GUIContent("Padding for pinned groups", spaceBetweenGroupsHint), m_PersonalPrefs.SpaceBetweenGroupsPinned);
 				m_PersonalPrefs.SpaceBetweenGroupsPinned = Mathf.Clamp(m_PersonalPrefs.SpaceBetweenGroupsPinned, 0, 16); // More round.
 
-				// Colorized Paths
+				// Colorize Patterns
 				{
 					var so = new SerializedObject(this);
 					var sp = so.FindProperty("m_PersonalPrefs");
 
-					EditorGUILayout.PropertyField(sp.FindPropertyRelative("ColorizedPaths"), m_PreferencesColorizedFoldersLabelCache, true);
+					EditorGUILayout.PropertyField(sp.FindPropertyRelative("ColorizePatterns"), m_PreferencesColorizePatternsLabelCache, true);
 
 					so.ApplyModifiedProperties();
 
 
-					foreach(var cf in m_PersonalPrefs.ColorizedPaths) {
-						if (string.IsNullOrEmpty(cf.StartPath)) {
+					foreach(var cf in m_PersonalPrefs.ColorizePatterns) {
+						if (string.IsNullOrEmpty(cf.Patterns)) {
 							cf.BackgroundColor = Color.white;
 							cf.TextColor = Color.black;
 						}
@@ -1196,14 +1234,14 @@ namespace DevLocker.Tools.AssetsManagement
 				var so = new SerializedObject(this);
 				var sp = so.FindProperty("m_ProjectPrefs");
 
-				EditorGUILayout.PropertyField(sp.FindPropertyRelative("ColorizedPaths"), m_PreferencesColorizedFoldersLabelCache, true);
+				EditorGUILayout.PropertyField(sp.FindPropertyRelative("ColorizePatterns"), m_PreferencesColorizePatternsLabelCache, true);
 				EditorGUILayout.PropertyField(sp.FindPropertyRelative("Exclude"), new GUIContent("Exclude paths", "Asset paths that will be ignored."), true);
 
 				so.ApplyModifiedProperties();
 
 
-				foreach (var cf in m_ProjectPrefs.ColorizedPaths) {
-					if (string.IsNullOrEmpty(cf.StartPath)) {
+				foreach (var cf in m_ProjectPrefs.ColorizePatterns) {
+					if (string.IsNullOrEmpty(cf.Patterns)) {
 						cf.BackgroundColor = Color.white;
 						cf.TextColor = Color.black;
 					}
@@ -1246,11 +1284,13 @@ namespace DevLocker.Tools.AssetsManagement
 
 		private void SaveAndClosePreferences()
 		{
+			var splitterChars = new char[] { ';' };
+
 			m_PersonalPrefs.DisplayRemoveFolders.RemoveAll(string.IsNullOrWhiteSpace);
-			m_PersonalPrefs.ColorizedPaths.RemoveAll(c => string.IsNullOrWhiteSpace(c.StartPath));
+			m_PersonalPrefs.ColorizePatterns.RemoveAll(c => c.Patterns.Split(splitterChars, StringSplitOptions.RemoveEmptyEntries).Length == 0);
 
 			m_ProjectPrefs.Exclude.RemoveAll(string.IsNullOrWhiteSpace);
-			m_ProjectPrefs.ColorizedPaths.RemoveAll(c => string.IsNullOrWhiteSpace(c.StartPath));
+			m_ProjectPrefs.ColorizePatterns.RemoveAll(c => c.Patterns.Split(splitterChars, StringSplitOptions.RemoveEmptyEntries).Length == 0);
 
 			// Sort explicitly, so assets will change on reload.
 			SortScenes(m_Scenes);
@@ -1258,8 +1298,8 @@ namespace DevLocker.Tools.AssetsManagement
 			RefreshDisplayNames(m_Scenes);
 			RefreshDisplayNames(m_Pinned);
 
-			RefreshColorizedPaths(m_Scenes);
-			RefreshColorizedPaths(m_Pinned);
+			RefreshColorizePatterns(m_Scenes);
+			RefreshColorizePatterns(m_Pinned);
 
 			StorePrefs();
 
