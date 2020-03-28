@@ -576,13 +576,13 @@ namespace DevLocker.Tools.AssetsManagement
 				return;
 			}
 
-			HandleScenesDrag();
-
 			bool openFirstResult;
 			string[] filterWords;
 			DrawControls(out openFirstResult, out filterWords);
 
 			DrawSceneLists(openFirstResult, filterWords);
+
+			HandleScenesDrag();
 		}
 
 		private void DrawControls(out bool openFirstResult, out string[] filterWords)
@@ -759,8 +759,6 @@ namespace DevLocker.Tools.AssetsManagement
 				bool changed = HandleScenesListDrag(m_Pinned, pinnedStartY, m_PersonalPrefs.SpaceBetweenGroupsPinned);
 				if (changed) {
 					m_PinnedGroupsCount = RegroupScenes(m_Pinned);
-
-					GUIUtility.ExitGUI();
 				}
 
 			} else {
@@ -774,8 +772,6 @@ namespace DevLocker.Tools.AssetsManagement
 				if (changed) {
 					SortScenes(m_Scenes);
 					RegroupScenes(m_Scenes);
-
-					GUIUtility.ExitGUI();
 				}
 			}
 		}
