@@ -418,11 +418,17 @@ namespace DevLocker.Tools.AssetsManagement
 			}
 		}
 
+		private void OnEnable()
+		{
+			m_Instances.Add(this);
+		}
+
 		private void OnDisable()
 		{
+			m_Instances.Remove(this);
+
 			if (m_Initialized) {
 				StoreAllScenes();
-				m_Instances.Remove(this);
 			}
 		}
 
@@ -553,10 +559,6 @@ namespace DevLocker.Tools.AssetsManagement
 		{
 			// Initialize on demand (not on OnEnable), to make sure everything is up and running.
 			if (!m_Initialized || AssetsChanged) {
-				if (!m_Initialized) {
-					m_Instances.Add(this);
-				}
-
 				InitializeData();
 				InitializeStyles();
 
