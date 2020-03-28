@@ -24,8 +24,10 @@ namespace DevLocker.Tools.AssetsManagement
 		private static void Init()
 		{
 			var window = (ScenesInProject)GetWindow(typeof(ScenesInProject), false, "Scenes In Project");
-			window.position = new Rect(window.position.xMin + 100f, window.position.yMin + 100f, 400f, 600f);
-			window.minSize = new Vector2(300f, 200f);
+			if (!window.m_Initialized) {
+				window.position = new Rect(window.position.xMin + 100f, window.position.yMin + 100f, 400f, 600f);
+				window.minSize = new Vector2(300f, 200f);
+			}
 		}
 
 		// Hidden Unity function, used to draw lock and other buttons at the top of the window.
@@ -894,6 +896,10 @@ namespace DevLocker.Tools.AssetsManagement
 					= SCENE_OPTIONS_BUTTON.normal.textColor
 					= SCENE_LOADED_BUTTON.normal.textColor
 					= sceneEntry.ColorizedPath.TextColor;
+			}
+
+			if (sceneEntry == m_DraggedEntity) {
+				GUI.backgroundColor *= new Color(0.9f, 0.9f, 0.9f, 0.6f);
 			}
 
 			var scene = SceneManager.GetSceneByPath(sceneEntry.Path);
