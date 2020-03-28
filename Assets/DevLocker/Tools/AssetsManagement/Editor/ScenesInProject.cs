@@ -28,6 +28,19 @@ namespace DevLocker.Tools.AssetsManagement
 			window.minSize = new Vector2(300f, 200f);
 		}
 
+		// Hidden Unity function, used to draw lock and other buttons at the top of the window.
+		private void ShowButton(Rect rect)
+		{
+			if (GUI.Button(rect, "+", GUI.skin.label)) {
+				ScenesInProject window = CreateInstance<ScenesInProject>();
+				window.titleContent = titleContent;
+				window.Show();
+
+				window.position = new Rect(window.position.xMin + 100f, window.position.yMin + 100f, 400f, 600f);
+				window.minSize = new Vector2(300f, 200f);
+			}
+		}
+
 		#region Types definitions
 
 		private enum PinnedOptions
@@ -147,6 +160,9 @@ namespace DevLocker.Tools.AssetsManagement
 
 		public static bool AssetsChanged = false;
 
+		// Used to synchronize instances.
+		private static List<ScenesInProject> m_Instances = new List<ScenesInProject>();
+
 
 		private bool m_Initialized = false;
 
@@ -182,13 +198,9 @@ namespace DevLocker.Tools.AssetsManagement
 		private const string SettingsPathScenes = "Library/ScenesInProject.Scenes.txt";
 		private const string SettingsPathPinnedScenes = "Library/ScenesInProject.PinnedScenes.txt";
 
-		private void StorePinned()
+		private void StoreAllScenes()
 		{
 			File.WriteAllLines(SettingsPathPinnedScenes, m_Pinned.Select(e => e.Path));
-		}
-
-		private void StoreScenes()
-		{
 			File.WriteAllLines(SettingsPathScenes, m_Scenes.Select(e => e.Path));
 		}
 
@@ -372,8 +384,8 @@ namespace DevLocker.Tools.AssetsManagement
 		private void OnDisable()
 		{
 			if (m_Initialized) {
-				StorePinned();
-				StoreScenes();
+				StoreAllScenes();
+				m_Instances.Remove(this);
 			}
 		}
 
@@ -446,8 +458,7 @@ namespace DevLocker.Tools.AssetsManagement
 				RefreshColorizedPaths(m_Scenes);
 				RefreshColorizedPaths(m_Pinned);
 
-				StorePinned();
-				StoreScenes();
+				StoreAllScenes();
 			}
 
 			RegroupScenes(m_Scenes);
@@ -482,12 +493,38 @@ namespace DevLocker.Tools.AssetsManagement
 			FOLD_OUT_BOLD.fontStyle = FontStyle.Bold;
 		}
 
+		private void SynchronizeInstancesToMe()
+		{
+			foreach(var instance in m_Instances) {
+				if (instance == this)
+					continue;
+
+				instance.m_Pinned = new List<SceneEntry>(m_Pinned);
+				instance.m_Scenes = new List<SceneEntry>(m_Scenes);
+				instance.m_PersonalPrefs = m_PersonalPrefs.Clone();
+				instance.m_ProjectPrefs = m_ProjectPrefs.Clone();
+				instance.m_PinnedGroupsCount = m_PinnedGroupsCount;
+
+				instance.Repaint();
+			}
+		}
+
 		private void OnGUI()
 		{
 			// Initialize on demand (not on OnEnable), to make sure everything is up and running.
 			if (!m_Initialized || AssetsChanged) {
+				if (!m_Initialized) {
+					m_Instances.Add(this);
+				}
+
 				InitializeData();
 				InitializeStyles();
+
+				// This instance will consume the AssetsChanged flag and synchronize the rest.
+				if (AssetsChanged) {
+					SynchronizeInstancesToMe();
+				}
+
 				m_Initialized = true;
 				AssetsChanged = false;
 			}
@@ -660,8 +697,8 @@ namespace DevLocker.Tools.AssetsManagement
 			if (Event.current.type == EventType.MouseUp) {
 				m_DraggedEntity = null;
 
-				StorePinned();
-				StoreScenes();
+				StoreAllScenes();
+				SynchronizeInstancesToMe();
 
 				return;
 			}
@@ -973,8 +1010,8 @@ namespace DevLocker.Tools.AssetsManagement
 				AutoSnapSplitter();
 			}
 
-			StorePinned();
-			StoreScenes();
+			StoreAllScenes();
+			SynchronizeInstancesToMe();
 		}
 
 		// Show context menu with options.
@@ -1033,8 +1070,8 @@ namespace DevLocker.Tools.AssetsManagement
 			RegroupScenes(m_Scenes);
 			m_PinnedGroupsCount = RegroupScenes(m_Pinned);
 
-			StorePinned();
-			StoreScenes();
+			StoreAllScenes();
+			SynchronizeInstancesToMe();
 
 			Repaint();
 		}
