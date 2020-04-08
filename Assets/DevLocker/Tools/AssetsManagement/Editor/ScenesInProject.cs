@@ -204,7 +204,7 @@ namespace DevLocker.Tools.AssetsManagement
 		private SceneEntry m_DraggedEntity;
 
 		private bool m_ShowPreferences = false;
-		private const string PERSONAL_PREFERENCES_KEY = "ScenesInProject";
+		private const string PERSONAL_PREFERENCES_PATH = "Library/ScenesInProject.prefs";
 		private const string PROJECT_PREFERENCES_PATH = "ProjectSettings/ScenesInProject.prefs";
 
 		private const string SettingsPathScenes = "Library/ScenesInProject.Scenes.txt";
@@ -273,7 +273,7 @@ namespace DevLocker.Tools.AssetsManagement
 
 		private void StorePrefs()
 		{
-			EditorPrefs.SetString(PERSONAL_PREFERENCES_KEY, JsonUtility.ToJson(m_PersonalPrefs));
+			File.WriteAllText(PERSONAL_PREFERENCES_PATH, JsonUtility.ToJson(m_PersonalPrefs, true));
 
 			File.WriteAllText(PROJECT_PREFERENCES_PATH, JsonUtility.ToJson(m_ProjectPrefs, true));
 		}
@@ -495,9 +495,9 @@ namespace DevLocker.Tools.AssetsManagement
 		//
 		private void LoadData()
 		{
-			var personalPrefsData = EditorPrefs.GetString(PERSONAL_PREFERENCES_KEY, string.Empty);
-			if (!string.IsNullOrEmpty(personalPrefsData)) {
-				m_PersonalPrefs = JsonUtility.FromJson<PersonalPreferences>(personalPrefsData);
+			var personalPrefsData = EditorPrefs.GetString(PERSONAL_PREFERENCES_PATH, string.Empty);
+			if (File.Exists(PERSONAL_PREFERENCES_PATH)) {
+				m_PersonalPrefs = JsonUtility.FromJson<PersonalPreferences>(File.ReadAllText(PERSONAL_PREFERENCES_PATH));
 			} else {
 				m_PersonalPrefs = new PersonalPreferences();
 			}
