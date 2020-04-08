@@ -119,6 +119,8 @@ namespace DevLocker.Tools.AssetsManagement
 			public int SpaceBetweenGroups = 6;  // Pixels between scenes with different folders.
 			public int SpaceBetweenGroupsPinned = 0;  // Same but for pinned.
 
+			public List<string> Exclude = new List<string>();   // Exclude paths OR filenames (per project preference)
+
 			public List<ColorizePattern> ColorizePatterns = new List<ColorizePattern>();
 
 			public float SplitterY = -1;			// Hidden preference.
@@ -127,6 +129,7 @@ namespace DevLocker.Tools.AssetsManagement
 			{
 				var clone = (PersonalPreferences)MemberwiseClone();
 				clone.DisplayRemoveFolders = new List<string>(DisplayRemoveFolders);
+				clone.Exclude = new List<string>(Exclude);
 				clone.ColorizePatterns = new List<ColorizePattern>(ColorizePatterns);
 
 				return clone;
@@ -243,7 +246,7 @@ namespace DevLocker.Tools.AssetsManagement
 
 			// Do Scenes as well.
 			setting = string.Format("SceneView_Scenes_{0}", System.Text.RegularExpressions.Regex.Replace(Application.dataPath, @"[/\\:?]", ""));
-			
+
 			storage = EditorPrefs.GetString(setting, string.Empty);
 
 			if (!string.IsNullOrEmpty(storage)) {
@@ -254,7 +257,7 @@ namespace DevLocker.Tools.AssetsManagement
 					.Select(p => new SceneEntry(p));
 				m_Scenes.InsertRange(0, toInsert);
 				hasChanged = true;
-				
+
 				EditorPrefs.DeleteKey(setting);
 			}
 
@@ -528,7 +531,7 @@ namespace DevLocker.Tools.AssetsManagement
 			foreach (string guid in sceneGuids) {
 				string scenePath = AssetDatabase.GUIDToAssetPath(guid);
 
-				if (ShouldExclude(m_ProjectPrefs.Exclude, scenePath))
+				if (ShouldExclude(m_ProjectPrefs.Exclude.Concat(m_PersonalPrefs.Exclude), scenePath))
 					continue;
 
 				scenesInDB.Add(scenePath);
@@ -1181,6 +1184,7 @@ namespace DevLocker.Tools.AssetsManagement
 
 
 		private readonly GUIContent m_PreferencesColorizePatternsLabelCache = new GUIContent("Colorize Entries", "Set colors of scenes based on a folder or name patterns.");
+		private readonly GUIContent m_PreferencesExcludePatternsLabelCache = new GUIContent("Exclude Scenes", "Relative path (contains '/') or asset name to be ignored.");
 		private Vector2 m_PreferencesScroll;
 		private bool m_PreferencesPersonalFold = true;
 		private bool m_PreferencesProjectFold = true;
@@ -1263,6 +1267,7 @@ namespace DevLocker.Tools.AssetsManagement
 					var sp = so.FindProperty("m_PersonalPrefs");
 
 					EditorGUILayout.PropertyField(sp.FindPropertyRelative("ColorizePatterns"), m_PreferencesColorizePatternsLabelCache, true);
+					EditorGUILayout.PropertyField(sp.FindPropertyRelative("Exclude"), m_PreferencesExcludePatternsLabelCache, true);
 
 					so.ApplyModifiedProperties();
 
@@ -1294,7 +1299,7 @@ namespace DevLocker.Tools.AssetsManagement
 				var sp = so.FindProperty("m_ProjectPrefs");
 
 				EditorGUILayout.PropertyField(sp.FindPropertyRelative("ColorizePatterns"), m_PreferencesColorizePatternsLabelCache, true);
-				EditorGUILayout.PropertyField(sp.FindPropertyRelative("Exclude"), new GUIContent("Exclude paths", "Asset paths that will be ignored."), true);
+				EditorGUILayout.PropertyField(sp.FindPropertyRelative("Exclude"), m_PreferencesExcludePatternsLabelCache, true);
 
 				so.ApplyModifiedProperties();
 
@@ -1346,6 +1351,7 @@ namespace DevLocker.Tools.AssetsManagement
 			var splitterChars = new char[] { ';' };
 
 			m_PersonalPrefs.DisplayRemoveFolders.RemoveAll(string.IsNullOrWhiteSpace);
+			m_PersonalPrefs.Exclude.RemoveAll(string.IsNullOrWhiteSpace);
 			m_PersonalPrefs.ColorizePatterns.RemoveAll(c => c.Patterns.Split(splitterChars, StringSplitOptions.RemoveEmptyEntries).Length == 0);
 
 			m_ProjectPrefs.Exclude.RemoveAll(string.IsNullOrWhiteSpace);
