@@ -207,6 +207,61 @@ namespace DevLocker.Tools.AssetsManagement
 		private const string SettingsPathScenes = "Library/ScenesInProject.Scenes.txt";
 		private const string SettingsPathPinnedScenes = "Library/ScenesInProject.PinnedScenes.txt";
 
+		#region LEGACY SUPPORT
+		private bool LEGACY_ReadPinnedListFromPrefs()
+		{
+			bool hasChanged = false;
+			var setting = string.Format("SceneView_PinnedScenes_{0}", System.Text.RegularExpressions.Regex.Replace(Application.dataPath, @"[/\\:?]", ""));
+
+			string storage = EditorPrefs.GetString(setting, string.Empty);
+
+			if (!string.IsNullOrEmpty(storage)) {
+				var preferencesList = new List<string>(storage.Split(';'));
+				foreach (var path in preferencesList) {
+					var entry = m_Scenes.Find(e => e.Path == path);
+
+					if (entry != null) {
+						m_Scenes.Remove(entry);
+
+						if (m_Pinned.Any(e => e.Path == path)) {
+							Debug.LogError($"ScenesInProject: scene {path} was present in m_Scenes and m_Pinned");
+							continue;
+						}
+
+						m_Pinned.Add(entry);
+						hasChanged = true;
+
+					} else if (!m_Pinned.Any(e => e.Path == path)) {
+						m_Pinned.Add(new SceneEntry(path));
+						hasChanged = true;
+					}
+				}
+
+				AutoSnapSplitter();
+				EditorPrefs.DeleteKey(setting);
+			}
+
+			// Do Scenes as well.
+			setting = string.Format("SceneView_Scenes_{0}", System.Text.RegularExpressions.Regex.Replace(Application.dataPath, @"[/\\:?]", ""));
+			
+			storage = EditorPrefs.GetString(setting, string.Empty);
+
+			if (!string.IsNullOrEmpty(storage)) {
+				var preferencesList = new List<string>(storage.Split(';'));
+				m_Scenes.RemoveAll(e => preferencesList.Contains(e.Path));
+				var toInsert = preferencesList
+					.Where(p => m_Pinned.FindIndex(e => e.Path == p) == -1)
+					.Select(p => new SceneEntry(p));
+				m_Scenes.InsertRange(0, toInsert);
+				hasChanged = true;
+				
+				EditorPrefs.DeleteKey(setting);
+			}
+
+			return hasChanged;
+		}
+		#endregion
+
 		private void StoreAllScenes()
 		{
 			File.WriteAllLines(SettingsPathPinnedScenes, m_Pinned.Select(e => e.Path));
@@ -491,6 +546,9 @@ namespace DevLocker.Tools.AssetsManagement
 				}
 			}
 
+			if (!m_Initialized && LEGACY_ReadPinnedListFromPrefs())
+				hasChanges = true;
+
 
 			if (hasChanges || !m_Initialized) {
 				SortScenes(m_Scenes);
@@ -559,8 +617,11 @@ namespace DevLocker.Tools.AssetsManagement
 		{
 			// Initialize on demand (not on OnEnable), to make sure everything is up and running.
 			if (!m_Initialized || AssetsChanged) {
+				if (!m_Initialized) {
+					InitializeStyles();
+				}
+
 				InitializeData();
-				InitializeStyles();
 
 				// This instance will consume the AssetsChanged flag and synchronize the rest.
 				if (AssetsChanged) {
