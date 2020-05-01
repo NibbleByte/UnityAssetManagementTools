@@ -616,6 +616,13 @@ namespace DevLocker.Tools.AssetsManagement
 			}
 		}
 
+		internal static void RepaintAllInstances()
+		{
+			foreach(var instance in m_Instances) {
+				instance.Repaint();
+			}
+		}
+
 		private void OnGUI()
 		{
 			// Initialize on demand (not on OnEnable), to make sure everything is up and running.
@@ -1405,42 +1412,45 @@ namespace DevLocker.Tools.AssetsManagement
 		// More info: https://issuetracker.unity3d.com/issues/assetmodificationprocessor-is-not-notified-when-an-asset-is-duplicated
 		// The only way to get notified is via AssetPostprocessor, but that gets called for everything (saving scenes including).
 		// Check the implementation below.
-		public static void OnWillCreateAsset(string path)
+		private static void OnWillCreateAsset(string path)
 		{
-			if (path.EndsWith(".unity.meta") || path.EndsWith(".unity"))
-				ScenesInProject.AssetsChanged = true;
+			CheckAndNotifyForPath(path, false);
 		}
 
-		public static AssetDeleteResult OnWillDeleteAsset(string path, RemoveAssetOptions option)
+		private static AssetDeleteResult OnWillDeleteAsset(string path, RemoveAssetOptions option)
 		{
-			if (path.EndsWith(".unity.meta") || path.EndsWith(".unity"))
-				ScenesInProject.AssetsChanged = true;
+			CheckAndNotifyForPath(path);
 
 			return AssetDeleteResult.DidNotDelete;
 		}
 
-		public static AssetMoveResult OnWillMoveAsset(string oldPath, string newPath)
+		private static AssetMoveResult OnWillMoveAsset(string oldPath, string newPath)
 		{
-			if (oldPath.EndsWith(".unity.meta") || oldPath.EndsWith(".unity")) {
+			CheckAndNotifyForPath(oldPath);
+
+			return AssetMoveResult.DidNotMove;
+		}
+
+		private static void CheckAndNotifyForPath(string path, bool checkForFolders = true)
+		{
+			if (path.EndsWith(".unity.meta") || path.EndsWith(".unity")) {
 				ScenesInProject.AssetsChanged = true;
-			} else {
+				ScenesInProject.RepaintAllInstances();
+			} else if (checkForFolders) {
 				// Check if this is folder. Folders can contain scenes.
 				// This is not accurate, but fast?
-				for(int i = oldPath.Length - 1; i >= 0; --i) {
-					char ch = oldPath[i];
-					if (ch == '.')	// It's a file (hopefully)
+				for (int i = path.Length - 1; i >= 0; --i) {
+					char ch = path[i];
+					if (ch == '.')  // It's a file (hopefully)
 						break;
 
 					if (ch == '/') { // It's a folder
 						ScenesInProject.AssetsChanged = true;
+						ScenesInProject.RepaintAllInstances();
 						break;
 					}
 				}
 			}
-
-
-
-			return AssetMoveResult.DidNotMove;
 		}
 	}
 
