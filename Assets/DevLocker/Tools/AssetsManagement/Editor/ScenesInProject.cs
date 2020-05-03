@@ -54,6 +54,15 @@ namespace DevLocker.Tools.AssetsManagement
 			ShowInProject,
 		}
 
+		private enum UnpinnedOptions
+		{
+			Pin,
+			MoveFirst,
+			MoveLast,
+			ShowInExplorer,
+			ShowInProject,
+		}
+
 		private enum SortType
 		{
 			MostRecent,
@@ -1074,7 +1083,7 @@ namespace DevLocker.Tools.AssetsManagement
 				if (isPinned) {
 					ShowPinnedOptions(sceneEntry);
 				} else {
-					PinScene(sceneEntry);
+					ShowUnpinnedOptions(sceneEntry);
 				}
 			}
 
@@ -1102,32 +1111,6 @@ namespace DevLocker.Tools.AssetsManagement
 			EditorGUILayout.EndHorizontal();
 		}
 
-
-		private void PinScene(SceneEntry sceneEntry)
-		{
-			bool shouldAutoSnapSplitter = ShouldAutoSnapSplitter();
-			m_Scenes.Remove(sceneEntry);
-
-			int pinIndex = m_Pinned.FindLastIndex(s => s.Folder == sceneEntry.Folder);
-			if (pinIndex == -1) {
-				m_Pinned.Add(sceneEntry);
-			} else {
-				m_Pinned.Insert(pinIndex + 1, sceneEntry);
-			}
-
-			// Don't sort m_Scenes or m_Pinned.
-			RegroupScenes(m_Scenes);
-			m_PinnedGroupsCount = RegroupScenes(m_Pinned);
-
-			if (shouldAutoSnapSplitter) {
-				AutoSnapSplitter();
-			}
-
-			StoreAllScenes();
-			SynchronizeInstancesToMe();
-		}
-
-		// Show context menu with options.
 		private void ShowPinnedOptions(SceneEntry sceneEntry)
 		{
 			var menu = new GenericMenu();
@@ -1140,21 +1123,38 @@ namespace DevLocker.Tools.AssetsManagement
 			menu.ShowAsContext();
 		}
 
+		private void ShowUnpinnedOptions(SceneEntry sceneEntry)
+		{
+			var menu = new GenericMenu();
+			int index = m_Scenes.IndexOf(sceneEntry);
+
+			foreach (UnpinnedOptions value in Enum.GetValues(typeof(UnpinnedOptions))) {
+				menu.AddItem(new GUIContent(ObjectNames.NicifyVariableName(value.ToString())), false, OnSelectUnpinnedOption, new KeyValuePair<UnpinnedOptions, int>(value, index));
+			}
+
+			menu.ShowAsContext();
+		}
+
 		private void OnSelectPinnedOption(object data)
 		{
 			var pair = (KeyValuePair<PinnedOptions, int>)data;
 			int index = pair.Value;
 
+			bool shouldAutoSnapSplitter = false;
+
 			switch (pair.Key) {
 
 				case PinnedOptions.Unpin:
-					bool shouldAutoSnapSplitter = ShouldAutoSnapSplitter();
+					shouldAutoSnapSplitter = ShouldAutoSnapSplitter();
 
-					m_Scenes.Insert(0, m_Pinned[index]);
+					var sceneEntry = m_Pinned[index];
 					m_Pinned.RemoveAt(index);
 
-					if (shouldAutoSnapSplitter) {
-						AutoSnapSplitter();
+					int unpinIndex = m_Scenes.FindIndex(s => s.Folder == sceneEntry.Folder);
+					if (unpinIndex == -1) {
+						m_Scenes.Insert(0, sceneEntry);
+					} else {
+						m_Scenes.Insert(unpinIndex, sceneEntry);
 					}
 
 					break;
@@ -1182,6 +1182,68 @@ namespace DevLocker.Tools.AssetsManagement
 
 			RegroupScenes(m_Scenes);
 			m_PinnedGroupsCount = RegroupScenes(m_Pinned);
+
+			if (shouldAutoSnapSplitter) {
+				AutoSnapSplitter();
+			}
+
+			StoreAllScenes();
+			SynchronizeInstancesToMe();
+
+			Repaint();
+		}
+
+		private void OnSelectUnpinnedOption(object data)
+		{
+			var pair = (KeyValuePair<UnpinnedOptions, int>)data;
+			int index = pair.Value;
+
+			bool shouldAutoSnapSplitter = false;
+
+			switch (pair.Key) {
+
+				case UnpinnedOptions.Pin:
+					shouldAutoSnapSplitter = ShouldAutoSnapSplitter();
+
+					var sceneEntry = m_Scenes[index];
+					m_Scenes.RemoveAt(index);
+
+					int pinIndex = m_Pinned.FindLastIndex(s => s.Folder == sceneEntry.Folder);
+					if (pinIndex == -1) {
+						m_Pinned.Add(sceneEntry);
+					} else {
+						m_Pinned.Insert(pinIndex + 1, sceneEntry);
+					}
+
+					break;
+
+				case UnpinnedOptions.MoveFirst:
+					m_Scenes.Insert(0, m_Scenes[index]);
+					m_Scenes.RemoveAt(index + 1);
+					break;
+
+				case UnpinnedOptions.MoveLast:
+					m_Scenes.Add(m_Scenes[index]);
+					m_Scenes.RemoveAt(index);
+					break;
+
+				case UnpinnedOptions.ShowInExplorer:
+					EditorUtility.RevealInFinder(m_Scenes[index].Path);
+					break;
+
+				case UnpinnedOptions.ShowInProject:
+					EditorGUIUtility.PingObject(AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(m_Scenes[index].Path));
+					break;
+			}
+
+			SortScenes(m_Scenes);
+
+			RegroupScenes(m_Scenes);
+			m_PinnedGroupsCount = RegroupScenes(m_Pinned);
+
+			if (shouldAutoSnapSplitter) {
+				AutoSnapSplitter();
+			}
 
 			StoreAllScenes();
 			SynchronizeInstancesToMe();
