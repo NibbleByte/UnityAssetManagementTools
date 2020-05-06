@@ -166,6 +166,9 @@ namespace DevLocker.Tools.AssetsManagement
 		private GUIStyle SceneOptionsButtonStyle;
 		private GUIContent SceneOptionsButtonContent = new GUIContent("\u2261", "Options...");	// \u2261 \u20AA
 
+		private GUIContent ScenePlayButtonContent = new GUIContent("\u25BA", "Play directly");
+		private GUIStyle ScenePlayButtonStyle;
+
 		private GUIStyle SceneLoadedButtonStyle;
 		private GUIContent SceneLoadedButtonAddContent = new GUIContent("+", "Load scene additively");
 		private GUIContent SceneLoadedButtonActiveContent = new GUIContent("*", "Active scene (cannot unload)");
@@ -617,7 +620,12 @@ namespace DevLocker.Tools.AssetsManagement
 			SceneOptionsButtonStyle.alignment = TextAnchor.MiddleCenter;
 			SceneOptionsButtonStyle.padding.left += 2;
 
-			SceneLoadedButtonStyle = new GUIStyle(GUI.skin.button);
+			ScenePlayButtonStyle = new GUIStyle(GUI.skin.GetStyle("ButtonLeft"));
+			ScenePlayButtonStyle.alignment = TextAnchor.MiddleCenter;
+			ScenePlayButtonStyle.padding.left += 2;
+			ScenePlayButtonStyle.padding.right -= 2;
+
+			SceneLoadedButtonStyle = new GUIStyle(GUI.skin.GetStyle("ButtonRight"));
 			SceneLoadedButtonStyle.alignment = TextAnchor.MiddleCenter;
 			SceneLoadedButtonStyle.padding.left = SceneLoadedButtonStyle.padding.right = 2;
 			SceneLoadedButtonStyle.contentOffset = new Vector2(1f, 0f);
@@ -1057,6 +1065,7 @@ namespace DevLocker.Tools.AssetsManagement
 				GUI.backgroundColor = sceneEntry.ColorizePattern.BackgroundColor;
 				SceneButtonStyle.normal.textColor
 					= SceneOptionsButtonStyle.normal.textColor
+					= ScenePlayButtonStyle.normal.textColor
 					= SceneLoadedButtonStyle.normal.textColor
 					= sceneEntry.ColorizePattern.TextColor;
 			}
@@ -1073,7 +1082,8 @@ namespace DevLocker.Tools.AssetsManagement
 			bool optionsPressed = GUILayout.Button(SceneOptionsButtonContent, SceneOptionsButtonStyle, GUILayout.Width(22));
 			bool scenePressed = GUILayout.Button(SceneButtonContentCache, SceneButtonStyle) || forceOpen;
 			var dragRect = EditorGUILayout.GetControlRect(false, GUILayout.Width(5f), GUILayout.Height(EditorGUIUtility.singleLineHeight + 2f));
-			bool loadPressed = GUILayout.Button(loadedButton, SceneLoadedButtonStyle, GUILayout.Width(20));
+			bool playPressed = GUILayout.Button(ScenePlayButtonContent, ScenePlayButtonStyle, GUILayout.Width(20));
+			bool loadPressed = GUILayout.Button(loadedButton, SceneLoadedButtonStyle, GUILayout.Width(21));
 
 			if (allowDrag) {
 				float paddingTop = Mathf.Floor(EditorGUIUtility.singleLineHeight / 2);
@@ -1090,10 +1100,11 @@ namespace DevLocker.Tools.AssetsManagement
 			GUI.backgroundColor = prevBackgroundColor;
 			SceneButtonStyle.normal.textColor
 				= SceneOptionsButtonStyle.normal.textColor
+				= ScenePlayButtonStyle.normal.textColor
 				= SceneLoadedButtonStyle.normal.textColor
 				= prevColor;
 
-			if (scenePressed || optionsPressed || loadPressed) {
+			if (scenePressed || optionsPressed || playPressed || loadPressed) {
 				// If scene was removed outside of Unity, the AssetModificationProcessor would not get notified.
 				if (!File.Exists(sceneEntry.Path)) {
 					AssetsChanged = true;
@@ -1132,6 +1143,10 @@ namespace DevLocker.Tools.AssetsManagement
 				} else {
 					ShowUnpinnedOptions(sceneEntry);
 				}
+			}
+
+			if (playPressed) {
+				PlaySceneDirectly(sceneEntry);
 			}
 
 			if (loadPressed) {
@@ -1218,11 +1233,11 @@ namespace DevLocker.Tools.AssetsManagement
 
 				case PinnedOptions.ShowInExplorer:
 					EditorUtility.RevealInFinder(m_Pinned[index].Path);
-					break;
+					return;
 
 				case PinnedOptions.ShowInProject:
 					EditorGUIUtility.PingObject(AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(m_Pinned[index].Path));
-					break;
+					return;
 			}
 
 			SortScenes(m_Scenes, m_PersonalPrefs.SortType);
@@ -1276,11 +1291,11 @@ namespace DevLocker.Tools.AssetsManagement
 
 				case UnpinnedOptions.ShowInExplorer:
 					EditorUtility.RevealInFinder(m_Scenes[index].Path);
-					break;
+					return;
 
 				case UnpinnedOptions.ShowInProject:
 					EditorGUIUtility.PingObject(AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(m_Scenes[index].Path));
-					break;
+					return;
 			}
 
 			SortScenes(m_Scenes, m_PersonalPrefs.SortType);
@@ -1296,6 +1311,18 @@ namespace DevLocker.Tools.AssetsManagement
 			SynchronizeInstancesToMe();
 
 			Repaint();
+		}
+
+		private void PlaySceneDirectly(SceneEntry sceneEntry)
+		{
+			if (EditorApplication.isPlaying) {
+				SceneManager.LoadSceneAsync(sceneEntry.Path);
+				return;
+			}
+
+			// YES! This exists from Unity 2017!!!! Bless you!!!
+			EditorSceneManager.playModeStartScene = AssetDatabase.LoadAssetAtPath<SceneAsset>(sceneEntry.Path);
+			EditorApplication.isPlaying = true;
 		}
 
 		private void ShowQuickSortOptions()
