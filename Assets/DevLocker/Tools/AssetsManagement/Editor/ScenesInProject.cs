@@ -14,35 +14,15 @@ namespace DevLocker.Tools.AssetsManagement
 	/// + quick access to scenes
 	/// + easily load scenes additively
 	/// + pin favourites
+	/// + colorize scenes based on file name or path
+	///
+	/// Find it at "Tools / Assets Management / Scenes In Project" menu.
 	///
 	/// Initial version of the script: http://wiki.unity3d.com/index.php/SceneViewWindow by Kevin Tarchenski.
 	/// Advanced (this) version by Filip Slavov (a.k.a. NibbleByte) - NibbleByte3@gmail.com.
 	/// </summary>
 	public class ScenesInProject : EditorWindow
 	{
-		[MenuItem("Tools/Assets Management/Scenes In Project")]
-		private static void Init()
-		{
-			var window = (ScenesInProject)GetWindow(typeof(ScenesInProject), false, "Scenes In Project");
-			if (!window.m_Initialized) {
-				window.position = new Rect(window.position.xMin + 100f, window.position.yMin + 100f, 400f, 600f);
-				window.minSize = new Vector2(300f, 200f);
-			}
-		}
-
-		// Hidden Unity function, used to draw lock and other buttons at the top of the window.
-		private void ShowButton(Rect rect)
-		{
-			if (GUI.Button(rect, "+", GUI.skin.label)) {
-				ScenesInProject window = CreateInstance<ScenesInProject>();
-				window.titleContent = titleContent;
-				window.Show();
-
-				window.position = new Rect(window.position.xMin + 100f, window.position.yMin + 100f, 400f, 600f);
-				window.minSize = new Vector2(300f, 200f);
-			}
-		}
-
 		#region Types definitions
 
 		private enum PinnedOptions
@@ -68,6 +48,14 @@ namespace DevLocker.Tools.AssetsManagement
 			MostRecent,
 			ByFileName,
 			ByPath,
+		}
+
+		private enum QuickSortType
+		{
+			ByPath,
+			ByFileName,
+			ByFileSize,
+			ByDateModified,
 		}
 
 		private enum SceneDisplay
@@ -189,8 +177,9 @@ namespace DevLocker.Tools.AssetsManagement
 		private GUIStyle DragHandlerStyle;
 		private GUIStyle FoldOutBoldStyle;
 
-		private GUIStyle PreferencesButtonStyle;
+		private GUIStyle ToolbarButtonStyle;
 		private GUIContent PreferencesButtonContent;
+		private GUIContent QuickSortButtonContent;
 
 		public static bool AssetsChanged = false;
 
@@ -231,6 +220,29 @@ namespace DevLocker.Tools.AssetsManagement
 
 		private const string SettingsPathScenes = "Library/ScenesInProject.Scenes.txt";
 		private const string SettingsPathPinnedScenes = "Library/ScenesInProject.PinnedScenes.txt";
+
+		[MenuItem("Tools/Assets Management/Scenes In Project")]
+		private static void Init()
+		{
+			var window = (ScenesInProject)GetWindow(typeof(ScenesInProject), false, "Scenes In Project");
+			if (!window.m_Initialized) {
+				window.position = new Rect(window.position.xMin + 100f, window.position.yMin + 100f, 400f, 600f);
+				window.minSize = new Vector2(300f, 200f);
+			}
+		}
+
+		// Hidden Unity function, used to draw lock and other buttons at the top of the window.
+		private void ShowButton(Rect rect)
+		{
+			if (GUI.Button(rect, "+", GUI.skin.label)) {
+				ScenesInProject window = CreateInstance<ScenesInProject>();
+				window.titleContent = titleContent;
+				window.Show();
+
+				window.position = new Rect(window.position.xMin + 100f, window.position.yMin + 100f, 400f, 600f);
+				window.minSize = new Vector2(300f, 200f);
+			}
+		}
 
 		#region LEGACY SUPPORT
 		private bool LEGACY_ReadPinnedListFromPrefs()
@@ -315,9 +327,9 @@ namespace DevLocker.Tools.AssetsManagement
 			return removeSuccessful;
 		}
 
-		private void SortScenes(List<SceneEntry> list)
+		private static void SortScenes(List<SceneEntry> list, SortType sortType)
 		{
-			switch(m_PersonalPrefs.SortType) {
+			switch(sortType) {
 				case SortType.MostRecent:
 					break;
 
@@ -576,7 +588,7 @@ namespace DevLocker.Tools.AssetsManagement
 
 
 			if (hasChanges || !m_Initialized) {
-				SortScenes(m_Scenes);
+				SortScenes(m_Scenes, m_PersonalPrefs.SortType);
 
 				RefreshDisplayNames(m_Scenes);
 				RefreshDisplayNames(m_Pinned);
@@ -628,9 +640,11 @@ namespace DevLocker.Tools.AssetsManagement
 			SearchFieldCancelStyle = GUI.skin.GetStyle("ToolbarSeachCancelButton");
 			SearchFieldCancelEmptyStyle = GUI.skin.GetStyle("ToolbarSeachCancelButtonEmpty");
 
+			ToolbarButtonStyle = new GUIStyle(EditorStyles.toolbarButton);
+			ToolbarButtonStyle.padding = new RectOffset();
+
 			PreferencesButtonContent = new GUIContent(EditorGUIUtility.FindTexture("Settings"), "Preferences...");
-			PreferencesButtonStyle = new GUIStyle(EditorStyles.toolbarButton);
-			PreferencesButtonStyle.padding = new RectOffset();
+			QuickSortButtonContent = new GUIContent(EditorGUIUtility.FindTexture("CustomSorting"), "Quick sort scenes");
 		}
 
 		private void SynchronizeInstancesToMe()
@@ -726,8 +740,14 @@ namespace DevLocker.Tools.AssetsManagement
 				Repaint();
 			}
 
-			if (GUILayout.Button(PreferencesButtonContent, PreferencesButtonStyle, GUILayout.Width(20.0f))) {
+			if (GUILayout.Button(QuickSortButtonContent, ToolbarButtonStyle, GUILayout.Width(25.0f))) {
+				ShowQuickSortOptions();
+				GUIUtility.ExitGUI();
+			}
+
+			if (GUILayout.Button(PreferencesButtonContent, ToolbarButtonStyle, GUILayout.Width(25.0f))) {
 				m_ShowPreferences = true;
+				Repaint();
 				GUIUtility.ExitGUI();
 			}
 
@@ -877,7 +897,7 @@ namespace DevLocker.Tools.AssetsManagement
 
 				bool changed = HandleScenesListDrag(m_Scenes, scenesStartY, m_PersonalPrefs.SpaceBetweenGroups);
 				if (changed) {
-					SortScenes(m_Scenes);
+					SortScenes(m_Scenes, m_PersonalPrefs.SortType);
 					RegroupScenes(m_Scenes);
 				}
 			}
@@ -1205,7 +1225,7 @@ namespace DevLocker.Tools.AssetsManagement
 					break;
 			}
 
-			SortScenes(m_Scenes);
+			SortScenes(m_Scenes, m_PersonalPrefs.SortType);
 
 			RegroupScenes(m_Scenes);
 			m_PinnedGroupsCount = RegroupScenes(m_Pinned);
@@ -1263,7 +1283,7 @@ namespace DevLocker.Tools.AssetsManagement
 					break;
 			}
 
-			SortScenes(m_Scenes);
+			SortScenes(m_Scenes, m_PersonalPrefs.SortType);
 
 			RegroupScenes(m_Scenes);
 			m_PinnedGroupsCount = RegroupScenes(m_Pinned);
@@ -1278,9 +1298,108 @@ namespace DevLocker.Tools.AssetsManagement
 			Repaint();
 		}
 
+		private void ShowQuickSortOptions()
+		{
+			var menu = new GenericMenu();
 
-		private readonly GUIContent m_PreferencesColorizePatternsLabelCache = new GUIContent("Colorize Entries", "Set colors of scenes based on a folder or name patterns.");
-		private readonly GUIContent m_PreferencesExcludePatternsLabelCache = new GUIContent("Exclude Scenes", "Relative path (contains '/') or asset name to be ignored.");
+			Action<string, bool, List<SceneEntry>, QuickSortType> addItem = (menuPath, enabled, scenes, sortType) => {
+				if (enabled)
+					menu.AddItem(new GUIContent(menuPath, "Foo"), false, () => OnSelectQuickSortOption(scenes, sortType));
+				else
+					menu.AddDisabledItem(new GUIContent(menuPath), false);
+			};
+
+			addItem("Sort Pinned/By Path", m_Pinned.Count > 0, m_Pinned, QuickSortType.ByPath);
+			addItem("Sort Pinned/By Filename", m_Pinned.Count > 0, m_Pinned, QuickSortType.ByFileName);
+			addItem("Sort Pinned/By File Size", m_Pinned.Count > 0, m_Pinned, QuickSortType.ByFileSize);
+			addItem("Sort Pinned/By Last Modified", m_Pinned.Count > 0, m_Pinned, QuickSortType.ByDateModified);
+
+			var isSortedByRecent = m_PersonalPrefs.SortType == SortType.MostRecent;
+			addItem("Sort Unpinned/By Path", isSortedByRecent, m_Scenes, QuickSortType.ByPath);
+			addItem("Sort Unpinned/By Filename", isSortedByRecent, m_Scenes, QuickSortType.ByFileName);
+			addItem("Sort Unpinned/By File Size", isSortedByRecent, m_Scenes, QuickSortType.ByFileSize);
+			addItem("Sort Unpinned/By Last Modified", isSortedByRecent, m_Scenes, QuickSortType.ByDateModified);
+
+			if (m_Pinned.Count > 0) {
+				menu.AddItem(new GUIContent("Clear All Pinned Scenes"), false, () => {
+					if (EditorUtility.DisplayDialog("Clear Pinned Scenes", "Are you sure you want to clear all pinned scenes?", "Yes!", "No")) {
+						ClearPinned();
+					}
+				});
+			} else {
+				menu.AddDisabledItem(new GUIContent("Clear All Pinned Scenes"), false);
+			}
+
+			menu.AddSeparator("");
+			menu.AddItem(new GUIContent("Cancel"), false, () => { });
+
+			menu.ShowAsContext();
+		}
+
+		private void OnSelectQuickSortOption(List<SceneEntry> scenes, QuickSortType sortType)
+		{
+			bool shouldAutoSnapSplitter = ShouldAutoSnapSplitter();
+
+			switch(sortType) {
+				case QuickSortType.ByPath:
+					SortScenes(scenes, SortType.ByPath);
+					break;
+
+				case QuickSortType.ByFileName:
+					SortScenes(scenes, SortType.ByFileName);
+					break;
+
+				case QuickSortType.ByFileSize:
+					scenes.Sort((a, b) => new FileInfo(b.Path).Length.CompareTo(new FileInfo(a.Path).Length));
+					break;
+
+				case QuickSortType.ByDateModified:
+					scenes.Sort((a, b) => File.GetLastWriteTime(b.Path).CompareTo(File.GetLastWriteTime(a.Path)));
+					break;
+			}
+
+			RegroupScenes(m_Scenes);
+			m_PinnedGroupsCount = RegroupScenes(m_Pinned);
+
+			if (shouldAutoSnapSplitter) {
+				AutoSnapSplitter();
+			}
+
+			StoreAllScenes();
+			SynchronizeInstancesToMe();
+
+			Repaint();
+		}
+
+		private void ClearPinned()
+		{
+			while (m_Pinned.Count > 0) {
+				var sceneEntry = m_Pinned[0];
+				m_Pinned.RemoveAt(0);
+
+				int unpinIndex = m_Scenes.FindIndex(s => s.Folder == sceneEntry.Folder);
+				if (unpinIndex == -1) {
+					m_Scenes.Insert(0, sceneEntry);
+				} else {
+					m_Scenes.Insert(unpinIndex, sceneEntry);
+				}
+			}
+
+			SortScenes(m_Scenes, m_PersonalPrefs.SortType);
+
+			RegroupScenes(m_Scenes);
+			m_PinnedGroupsCount = RegroupScenes(m_Pinned);
+
+			AutoSnapSplitter();
+
+			StoreAllScenes();
+			SynchronizeInstancesToMe();
+
+			Repaint();
+		}
+
+		private readonly GUIContent PreferencesColorizePatternsLabelContent = new GUIContent("Colorize Entries", "Set colors of scenes based on a folder or name patterns.");
+		private readonly GUIContent PreferencesExcludePatternsLabelContent = new GUIContent("Exclude Scenes", "Relative path (contains '/') or asset name to be ignored.");
 		private Vector2 m_PreferencesScroll;
 		private bool m_PreferencesPersonalFold = true;
 		private bool m_PreferencesProjectFold = true;
@@ -1362,8 +1481,8 @@ namespace DevLocker.Tools.AssetsManagement
 					var so = new SerializedObject(this);
 					var sp = so.FindProperty("m_PersonalPrefs");
 
-					EditorGUILayout.PropertyField(sp.FindPropertyRelative("ColorizePatterns"), m_PreferencesColorizePatternsLabelCache, true);
-					EditorGUILayout.PropertyField(sp.FindPropertyRelative("Exclude"), m_PreferencesExcludePatternsLabelCache, true);
+					EditorGUILayout.PropertyField(sp.FindPropertyRelative("ColorizePatterns"), PreferencesColorizePatternsLabelContent, true);
+					EditorGUILayout.PropertyField(sp.FindPropertyRelative("Exclude"), PreferencesExcludePatternsLabelContent, true);
 
 					so.ApplyModifiedProperties();
 
@@ -1394,8 +1513,8 @@ namespace DevLocker.Tools.AssetsManagement
 				var so = new SerializedObject(this);
 				var sp = so.FindProperty("m_ProjectPrefs");
 
-				EditorGUILayout.PropertyField(sp.FindPropertyRelative("ColorizePatterns"), m_PreferencesColorizePatternsLabelCache, true);
-				EditorGUILayout.PropertyField(sp.FindPropertyRelative("Exclude"), m_PreferencesExcludePatternsLabelCache, true);
+				EditorGUILayout.PropertyField(sp.FindPropertyRelative("ColorizePatterns"), PreferencesColorizePatternsLabelContent, true);
+				EditorGUILayout.PropertyField(sp.FindPropertyRelative("Exclude"), PreferencesExcludePatternsLabelContent, true);
 
 				so.ApplyModifiedProperties();
 
@@ -1454,7 +1573,7 @@ namespace DevLocker.Tools.AssetsManagement
 			m_ProjectPrefs.ColorizePatterns.RemoveAll(c => c.Patterns.Split(splitterChars, StringSplitOptions.RemoveEmptyEntries).Length == 0);
 
 			// Sort explicitly, so assets will change on reload.
-			SortScenes(m_Scenes);
+			SortScenes(m_Scenes, m_PersonalPrefs.SortType);
 
 			RefreshDisplayNames(m_Scenes);
 			RefreshDisplayNames(m_Pinned);
