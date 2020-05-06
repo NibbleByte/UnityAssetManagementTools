@@ -164,20 +164,33 @@ namespace DevLocker.Tools.AssetsManagement
 
 		#endregion
 
-		private readonly char[] FILTER_WORD_SEPARATORS = new char[] { ' ', '\t' };
-		private GUIStyle SCENE_BUTTON;
-		private GUIStyle SCENE_OPTIONS_BUTTON;
-		private GUIStyle SCENE_LOADED_BUTTON;
-		private float SCENE_BUTTON_HEIGHT;
+		private readonly char[] FilterWordsSeparator = new char[] { ' ', '\t' };
 
-		private GUIStyle SPLITTER_STYLE;
-		private GUIStyle DRAGHANDLER_STYLE;
-		private GUIStyle FOLD_OUT_BOLD;
-		private GUIContent m_PreferencesButtonTextCache = new GUIContent("P", "Preferences...");
-		private GUIContent m_SceneButtonTextCache = new GUIContent();
-		private GUIContent m_AddSceneButtonTextCache = new GUIContent("+", "Load scene additively");
-		private GUIContent m_ActiveSceneButtonTextCache = new GUIContent("*", "Active scene (cannot unload)");
-		private GUIContent m_RemoveSceneButtonTextCache = new GUIContent("-", "Unload scene");
+		private GUIStyle SearchLabelStyle;
+		private GUIContent SearchLabelContent = new GUIContent("Search:", "Filter out scenes by name.\nPress Enter to open first unpinned result.");
+
+		private GUIStyle SearchFieldStyle;
+		private GUIStyle SearchFieldCancelStyle;
+		private GUIStyle SearchFieldCancelEmptyStyle;
+
+		private GUIStyle SceneButtonStyle;
+		private GUIContent SceneButtonContentCache = new GUIContent();
+		private GUIStyle SceneOptionsButtonStyle;
+		private GUIContent SceneOptionsButtonContent = new GUIContent("\u2261", "Options...");	// \u2261 \u20AA
+
+		private GUIStyle SceneLoadedButtonStyle;
+		private GUIContent SceneLoadedButtonAddContent = new GUIContent("+", "Load scene additively");
+		private GUIContent SceneLoadedButtonActiveContent = new GUIContent("*", "Active scene (cannot unload)");
+		private GUIContent SceneLoadedButtonRemoveContent = new GUIContent("-", "Unload scene");
+
+		private float SceneButtonHeight;
+
+		private GUIStyle SplitterStyle;
+		private GUIStyle DragHandlerStyle;
+		private GUIStyle FoldOutBoldStyle;
+
+		private GUIStyle PreferencesButtonStyle;
+		private GUIContent PreferencesButtonContent;
 
 		public static bool AssetsChanged = false;
 
@@ -580,30 +593,44 @@ namespace DevLocker.Tools.AssetsManagement
 
 		private void InitializeStyles()
 		{
-			SCENE_BUTTON = new GUIStyle(GUI.skin.button);
-			SCENE_BUTTON.alignment = TextAnchor.MiddleLeft;
-			SCENE_BUTTON.padding.left = 10;
+			titleContent.image = EditorGUIUtility.FindTexture("Favorite");
 
-			SCENE_BUTTON_HEIGHT = EditorGUIUtility.singleLineHeight + SCENE_BUTTON.margin.top + SCENE_BUTTON.margin.bottom - 1;
+			SceneButtonStyle = new GUIStyle(GUI.skin.button);
+			SceneButtonStyle.alignment = TextAnchor.MiddleLeft;
+			SceneButtonStyle.padding.left = 10;
 
-			SCENE_OPTIONS_BUTTON = new GUIStyle(GUI.skin.button);
-			SCENE_OPTIONS_BUTTON.alignment = TextAnchor.MiddleCenter;
+			SceneButtonHeight = EditorGUIUtility.singleLineHeight + SceneButtonStyle.margin.top + SceneButtonStyle.margin.bottom - 1;
 
-			SCENE_LOADED_BUTTON = new GUIStyle(GUI.skin.button);
-			SCENE_LOADED_BUTTON.alignment = TextAnchor.MiddleCenter;
-			SCENE_LOADED_BUTTON.padding.left = SCENE_LOADED_BUTTON.padding.right = 2;
-			SCENE_LOADED_BUTTON.contentOffset = new Vector2(1f, 0f);
+			SceneOptionsButtonStyle = new GUIStyle(GUI.skin.button);
+			SceneOptionsButtonStyle.alignment = TextAnchor.MiddleCenter;
+			SceneOptionsButtonStyle.padding.left += 2;
 
-			SPLITTER_STYLE = new GUIStyle(GUI.skin.box);
-			SPLITTER_STYLE.alignment = TextAnchor.MiddleCenter;
-			SPLITTER_STYLE.clipping = TextClipping.Overflow;
-			SPLITTER_STYLE.contentOffset = new Vector2(0f, -1f);
+			SceneLoadedButtonStyle = new GUIStyle(GUI.skin.button);
+			SceneLoadedButtonStyle.alignment = TextAnchor.MiddleCenter;
+			SceneLoadedButtonStyle.padding.left = SceneLoadedButtonStyle.padding.right = 2;
+			SceneLoadedButtonStyle.contentOffset = new Vector2(1f, 0f);
 
-			DRAGHANDLER_STYLE = new GUIStyle(GUI.skin.GetStyle("RL DragHandle"));
+			SplitterStyle = new GUIStyle(GUI.skin.box);
+			SplitterStyle.alignment = TextAnchor.MiddleCenter;
+			SplitterStyle.clipping = TextClipping.Overflow;
+			SplitterStyle.contentOffset = new Vector2(0f, -1f);
+
+			DragHandlerStyle = new GUIStyle(GUI.skin.GetStyle("RL DragHandle"));
 			//DRAGHANDLER_STYLE.contentOffset = new Vector2(0f, Mathf.FloorToInt(EditorGUIUtility.singleLineHeight / 2f) + 2);
 
-			FOLD_OUT_BOLD = new GUIStyle(EditorStyles.foldout);
-			FOLD_OUT_BOLD.fontStyle = FontStyle.Bold;
+			FoldOutBoldStyle = new GUIStyle(EditorStyles.foldout);
+			FoldOutBoldStyle.fontStyle = FontStyle.Bold;
+
+			SearchLabelStyle = new GUIStyle(EditorStyles.boldLabel);
+			SearchLabelStyle.margin.top = 1;
+
+			SearchFieldStyle = GUI.skin.GetStyle("ToolbarSeachTextField");
+			SearchFieldCancelStyle = GUI.skin.GetStyle("ToolbarSeachCancelButton");
+			SearchFieldCancelEmptyStyle = GUI.skin.GetStyle("ToolbarSeachCancelButtonEmpty");
+
+			PreferencesButtonContent = new GUIContent(EditorGUIUtility.FindTexture("Settings"), "Preferences...");
+			PreferencesButtonStyle = new GUIStyle(EditorStyles.toolbarButton);
+			PreferencesButtonStyle.padding = new RectOffset();
 		}
 
 		private void SynchronizeInstancesToMe()
@@ -667,16 +694,16 @@ namespace DevLocker.Tools.AssetsManagement
 
 		private void DrawControls(out bool openFirstResult, out string[] filterWords)
 		{
-			EditorGUILayout.BeginHorizontal();
+			EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
 
 			//
 			// Draw Filter
 			//
-			GUILayout.Label("Search:", EditorStyles.boldLabel, GUILayout.ExpandWidth(false));
+			GUILayout.Label(SearchLabelContent, SearchLabelStyle, GUILayout.ExpandWidth(false));
 
 
 			GUI.SetNextControlName("FilterControl");
-			m_Filter = EditorGUILayout.TextField(m_Filter, GUILayout.Height(20));
+			m_Filter = EditorGUILayout.TextField(m_Filter, SearchFieldStyle, GUILayout.Height(20));
 
 			// HACK: skip a frame to focus control, to avoid visual bugs. Bad bad Unity!
 			if (m_FocusFilterField) {
@@ -692,14 +719,14 @@ namespace DevLocker.Tools.AssetsManagement
 			}
 
 			// Clear on button
-			if (GUILayout.Button("X", GUILayout.Width(20.0f))) {
+			if (GUILayout.Button(" ", string.IsNullOrEmpty(m_Filter) ? SearchFieldCancelEmptyStyle : SearchFieldCancelStyle, GUILayout.Width(20.0f))) {
 				m_Filter = "";
 				GUI.FocusControl("");
 				m_FocusFilterField = true;
 				Repaint();
 			}
 
-			if (GUILayout.Button(m_PreferencesButtonTextCache, GUILayout.Width(20.0f))) {
+			if (GUILayout.Button(PreferencesButtonContent, PreferencesButtonStyle, GUILayout.Width(20.0f))) {
 				m_ShowPreferences = true;
 				GUIUtility.ExitGUI();
 			}
@@ -719,7 +746,7 @@ namespace DevLocker.Tools.AssetsManagement
 
 			EditorGUILayout.EndHorizontal();
 
-			filterWords = string.IsNullOrEmpty(m_Filter) ? null : m_Filter.Split(FILTER_WORD_SEPARATORS, StringSplitOptions.RemoveEmptyEntries);
+			filterWords = string.IsNullOrEmpty(m_Filter) ? null : m_Filter.Split(FilterWordsSeparator, StringSplitOptions.RemoveEmptyEntries);
 			if (openFirstResult) {
 				m_Filter = "";
 			}
@@ -917,11 +944,11 @@ namespace DevLocker.Tools.AssetsManagement
 
 		private float CalcSplitterMaxY()
 		{
-			float BOTTOM_PADDING = SCENE_BUTTON_HEIGHT * 3 + 8f;
+			float BOTTOM_PADDING = SceneButtonHeight * 3 + 8f;
 			float minY = CalcSplitterMinY();
 			var pinnedGroupsSpace = m_PinnedGroupsCount * m_PersonalPrefs.SpaceBetweenGroupsPinned;
 
-			return Mathf.Min(minY + SCENE_BUTTON_HEIGHT * (m_Pinned.Count - 1) + pinnedGroupsSpace, position.height - BOTTOM_PADDING);
+			return Mathf.Min(minY + SceneButtonHeight * (m_Pinned.Count - 1) + pinnedGroupsSpace, position.height - BOTTOM_PADDING);
 		}
 
 		private void DrawSplitter()
@@ -929,7 +956,7 @@ namespace DevLocker.Tools.AssetsManagement
 			m_SplitterRect.width = 150f;
 			m_SplitterRect.x = (position.width - m_SplitterRect.width) / 2f;
 
-			GUI.Box(m_SplitterRect, "- - - - - - -", SPLITTER_STYLE);
+			GUI.Box(m_SplitterRect, "- - - - - - -", SplitterStyle);
 			//GUI.DrawTexture(m_SplitterRect, EditorGUIUtility.whiteTexture);
 			EditorGUIUtility.AddCursorRect(m_SplitterRect, MouseCursor.ResizeVertical);
 
@@ -1001,16 +1028,16 @@ namespace DevLocker.Tools.AssetsManagement
 		{
 			EditorGUILayout.BeginHorizontal();
 
-			m_SceneButtonTextCache.text = sceneEntry.DisplayName;
-			m_SceneButtonTextCache.tooltip = sceneEntry.Path;
+			SceneButtonContentCache.text = sceneEntry.DisplayName;
+			SceneButtonContentCache.tooltip = sceneEntry.Path;
 
 			var prevBackgroundColor = GUI.backgroundColor;
-			var prevColor = SCENE_BUTTON.normal.textColor;
+			var prevColor = SceneButtonStyle.normal.textColor;
 			if (sceneEntry.ColorizePattern != null && !string.IsNullOrEmpty(sceneEntry.ColorizePattern.Patterns)) {
 				GUI.backgroundColor = sceneEntry.ColorizePattern.BackgroundColor;
-				SCENE_BUTTON.normal.textColor
-					= SCENE_OPTIONS_BUTTON.normal.textColor
-					= SCENE_LOADED_BUTTON.normal.textColor
+				SceneButtonStyle.normal.textColor
+					= SceneOptionsButtonStyle.normal.textColor
+					= SceneLoadedButtonStyle.normal.textColor
 					= sceneEntry.ColorizePattern.TextColor;
 			}
 
@@ -1021,17 +1048,17 @@ namespace DevLocker.Tools.AssetsManagement
 			var scene = SceneManager.GetSceneByPath(sceneEntry.Path);
 			bool isSceneLoaded = scene.IsValid();
 			bool isActiveScene = isSceneLoaded && scene == SceneManager.GetActiveScene();
-			var loadedButton = isSceneLoaded ? (isActiveScene ? m_ActiveSceneButtonTextCache : m_RemoveSceneButtonTextCache) : m_AddSceneButtonTextCache;
+			var loadedButton = isSceneLoaded ? (isActiveScene ? SceneLoadedButtonActiveContent : SceneLoadedButtonRemoveContent) : SceneLoadedButtonAddContent;
 
-			bool optionsPressed = GUILayout.Button(isPinned ? "O" : "@", SCENE_OPTIONS_BUTTON, GUILayout.Width(22));
-			bool scenePressed = GUILayout.Button(m_SceneButtonTextCache, SCENE_BUTTON) || forceOpen;
+			bool optionsPressed = GUILayout.Button(SceneOptionsButtonContent, SceneOptionsButtonStyle, GUILayout.Width(22));
+			bool scenePressed = GUILayout.Button(SceneButtonContentCache, SceneButtonStyle) || forceOpen;
 			var dragRect = EditorGUILayout.GetControlRect(false, GUILayout.Width(5f), GUILayout.Height(EditorGUIUtility.singleLineHeight + 2f));
-			bool loadPressed = GUILayout.Button(loadedButton, SCENE_LOADED_BUTTON, GUILayout.Width(20));
+			bool loadPressed = GUILayout.Button(loadedButton, SceneLoadedButtonStyle, GUILayout.Width(20));
 
 			if (allowDrag) {
 				float paddingTop = Mathf.Floor(EditorGUIUtility.singleLineHeight / 2);
 				dragRect.y += paddingTop;
-				GUI.Box(dragRect, string.Empty, DRAGHANDLER_STYLE);
+				GUI.Box(dragRect, string.Empty, DragHandlerStyle);
 				dragRect.y -= paddingTop;
 				EditorGUIUtility.AddCursorRect(dragRect, MouseCursor.ResizeVertical);
 
@@ -1041,9 +1068,9 @@ namespace DevLocker.Tools.AssetsManagement
 			}
 
 			GUI.backgroundColor = prevBackgroundColor;
-			SCENE_BUTTON.normal.textColor
-				= SCENE_OPTIONS_BUTTON.normal.textColor
-				= SCENE_LOADED_BUTTON.normal.textColor
+			SceneButtonStyle.normal.textColor
+				= SceneOptionsButtonStyle.normal.textColor
+				= SceneLoadedButtonStyle.normal.textColor
 				= prevColor;
 
 			if (scenePressed || optionsPressed || loadPressed) {
@@ -1291,7 +1318,7 @@ namespace DevLocker.Tools.AssetsManagement
 			//
 			// Personal Preferences
 			//
-			m_PreferencesPersonalFold = EditorGUILayout.Foldout(m_PreferencesPersonalFold, "Personal Preferences:", FOLD_OUT_BOLD);
+			m_PreferencesPersonalFold = EditorGUILayout.Foldout(m_PreferencesPersonalFold, "Personal Preferences:", FoldOutBoldStyle);
 			if (m_PreferencesPersonalFold) {
 				EditorGUI.indentLevel++;
 
@@ -1357,7 +1384,7 @@ namespace DevLocker.Tools.AssetsManagement
 			//
 			// Project Preferences
 			//
-			m_PreferencesProjectFold = EditorGUILayout.Foldout(m_PreferencesProjectFold, "Project Preferences:", FOLD_OUT_BOLD);
+			m_PreferencesProjectFold = EditorGUILayout.Foldout(m_PreferencesProjectFold, "Project Preferences:", FoldOutBoldStyle);
 			if (m_PreferencesProjectFold) {
 
 				EditorGUI.indentLevel++;
@@ -1388,7 +1415,7 @@ namespace DevLocker.Tools.AssetsManagement
 			//
 			// About
 			//
-			m_PreferencesAboutFold = EditorGUILayout.Foldout(m_PreferencesAboutFold, "About:", FOLD_OUT_BOLD);
+			m_PreferencesAboutFold = EditorGUILayout.Foldout(m_PreferencesAboutFold, "About:", FoldOutBoldStyle);
 			if (m_PreferencesAboutFold) {
 				EditorGUI.indentLevel++;
 
