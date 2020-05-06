@@ -48,6 +48,7 @@ namespace DevLocker.Tools.AssetsManagement
 			MostRecent,
 			ByFileName,
 			ByPath,
+			DontSort = 20,
 		}
 
 		private enum QuickSortType
@@ -334,6 +335,7 @@ namespace DevLocker.Tools.AssetsManagement
 		{
 			switch(sortType) {
 				case SortType.MostRecent:
+				case SortType.DontSort:
 					break;
 
 				case SortType.ByFileName:
@@ -843,7 +845,10 @@ namespace DevLocker.Tools.AssetsManagement
 					}
 				}
 
-				DrawSceneButtons(sceneEntry, false, filterWords == null && m_PersonalPrefs.SortType == SortType.MostRecent, openFirstResult);
+				bool allowDrag = filterWords == null;
+				allowDrag &= m_PersonalPrefs.SortType == SortType.MostRecent || m_PersonalPrefs.SortType == SortType.DontSort;
+
+				DrawSceneButtons(sceneEntry, false, allowDrag, openFirstResult);
 				openFirstResult = false;
 
 				if (!m_ShowFullBigList && filteredCount >= m_PersonalPrefs.ListCountLimit)
@@ -1341,11 +1346,11 @@ namespace DevLocker.Tools.AssetsManagement
 			addItem("Sort Pinned/By File Size", m_Pinned.Count > 0, m_Pinned, QuickSortType.ByFileSize);
 			addItem("Sort Pinned/By Last Modified", m_Pinned.Count > 0, m_Pinned, QuickSortType.ByDateModified);
 
-			var isSortedByRecent = m_PersonalPrefs.SortType == SortType.MostRecent;
-			addItem("Sort Unpinned/By Path", isSortedByRecent, m_Scenes, QuickSortType.ByPath);
-			addItem("Sort Unpinned/By Filename", isSortedByRecent, m_Scenes, QuickSortType.ByFileName);
-			addItem("Sort Unpinned/By File Size", isSortedByRecent, m_Scenes, QuickSortType.ByFileSize);
-			addItem("Sort Unpinned/By Last Modified", isSortedByRecent, m_Scenes, QuickSortType.ByDateModified);
+			var canSort = m_PersonalPrefs.SortType == SortType.MostRecent || m_PersonalPrefs.SortType == SortType.DontSort;
+			addItem("Sort Unpinned/By Path", canSort, m_Scenes, QuickSortType.ByPath);
+			addItem("Sort Unpinned/By Filename", canSort, m_Scenes, QuickSortType.ByFileName);
+			addItem("Sort Unpinned/By File Size", canSort, m_Scenes, QuickSortType.ByFileSize);
+			addItem("Sort Unpinned/By Last Modified", canSort, m_Scenes, QuickSortType.ByDateModified);
 
 			if (m_Pinned.Count > 0) {
 				menu.AddItem(new GUIContent("Clear All Pinned Scenes"), false, () => {
@@ -1470,7 +1475,7 @@ namespace DevLocker.Tools.AssetsManagement
 
 				EditorGUILayout.HelpBox("Hint: check the the tooltips.", MessageType.Info);
 
-				m_PersonalPrefs.SortType = (SortType) EditorGUILayout.EnumPopup(new GUIContent("Sort by", "How to sort the list of scenes (not the pinned ones).\nNOTE: Changing this might override the \"Most Recent\" sort done by now."), m_PersonalPrefs.SortType);
+				m_PersonalPrefs.SortType = (SortType) EditorGUILayout.EnumPopup(new GUIContent("Sort by", "How to automatically sort the list of scenes (not the pinned ones).\nNOTE: Changing this will loose the \"Most Recent\" sort done by now."), m_PersonalPrefs.SortType);
 				m_PersonalPrefs.SceneDisplay = (SceneDisplay) EditorGUILayout.EnumPopup(new GUIContent("Display entries", "How scenes should be displayed."), m_PersonalPrefs.SceneDisplay);
 
 				if (m_PersonalPrefs.SceneDisplay == SceneDisplay.SceneNamesWithParents) {
