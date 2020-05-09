@@ -66,6 +66,13 @@ namespace DevLocker.Tools.AssetsManagement
 			SceneFullPathsOmitFolders
 		}
 
+		private enum PreferencesTab
+		{
+			Personal = 0,
+			Project = 1,
+			About = 2,
+		}
+
 		[Serializable]
 		private class SceneEntry
 		{
@@ -1433,9 +1440,9 @@ namespace DevLocker.Tools.AssetsManagement
 		private readonly GUIContent PreferencesColorizePatternsLabelContent = new GUIContent("Colorize Entries", "Set colors of scenes based on a folder or name patterns.");
 		private readonly GUIContent PreferencesExcludePatternsLabelContent = new GUIContent("Exclude Scenes", "Relative path (contains '/') or asset name to be ignored.");
 		private Vector2 m_PreferencesScroll;
-		private bool m_PreferencesPersonalFold = true;
-		private bool m_PreferencesProjectFold = true;
-		private bool m_PreferencesAboutFold = true;
+
+		private PreferencesTab m_SelectedTab = PreferencesTab.Personal;
+		private static readonly string[] m_PreferencesTabsNames = Enum.GetNames(typeof(PreferencesTab));
 
 		private void DrawPreferences()
 		{
@@ -1464,131 +1471,21 @@ namespace DevLocker.Tools.AssetsManagement
 
 			EditorGUILayout.Space();
 
+			m_SelectedTab = (PreferencesTab) GUILayout.Toolbar((int) m_SelectedTab, m_PreferencesTabsNames);
+
 			m_PreferencesScroll = EditorGUILayout.BeginScrollView(m_PreferencesScroll);
 
-			//
-			// Personal Preferences
-			//
-			m_PreferencesPersonalFold = EditorGUILayout.Foldout(m_PreferencesPersonalFold, "Personal Preferences:", FoldOutBoldStyle);
-			if (m_PreferencesPersonalFold) {
-				EditorGUI.indentLevel++;
-
-				EditorGUILayout.HelpBox("Hint: check the the tooltips.", MessageType.Info);
-
-				m_PersonalPrefs.SortType = (SortType) EditorGUILayout.EnumPopup(new GUIContent("Sort by", "How to automatically sort the list of scenes (not the pinned ones).\nNOTE: Changing this will loose the \"Most Recent\" sort done by now."), m_PersonalPrefs.SortType);
-				m_PersonalPrefs.SceneDisplay = (SceneDisplay) EditorGUILayout.EnumPopup(new GUIContent("Display entries", "How scenes should be displayed."), m_PersonalPrefs.SceneDisplay);
-
-				if (m_PersonalPrefs.SceneDisplay == SceneDisplay.SceneNamesWithParents) {
-					EditorGUI.indentLevel++;
-					m_PersonalPrefs.DisplayParentsCount = EditorGUILayout.IntField(new GUIContent("Parents depth", "How many parent folders to show.\nExample: Assets/Scenes/GUI/Foo.unity\n> 1 displays \"GUI/Foo\"\n> 2 displays \"Scenes/GUI/Foo\"\netc..."), m_PersonalPrefs.DisplayParentsCount);
-					m_PersonalPrefs.DisplayParentsCount = Mathf.Clamp(m_PersonalPrefs.DisplayParentsCount, 1, 1024); // More round.
-					EditorGUI.indentLevel--;
-				}
-
-				if (m_PersonalPrefs.SceneDisplay == SceneDisplay.SceneFullPathsOmitFolders) {
-					EditorGUI.indentLevel++;
-
-					var so = new SerializedObject(this);
-					var sp = so.FindProperty("m_PersonalPrefs").FindPropertyRelative("DisplayRemoveFolders");
-
-					EditorGUILayout.PropertyField(sp, new GUIContent("Omit folders", "List of folders that will be removed from the displayed path. Example: Remove \"Assets\" folder from the path."), true);
-
-					so.ApplyModifiedProperties();
-
-					EditorGUI.indentLevel--;
-				}
-
-				m_PersonalPrefs.ListCountLimit = EditorGUILayout.IntField(new GUIContent("Shown scenes limit", "If the scenes in the list are more than this value, they will be truncated (button \"Show All\" is shown).\nTruncated scenes still participate in the search.\n\nThis is very useful in a project with lots of scenes, where drawing large scrollable lists is expensive."), m_PersonalPrefs.ListCountLimit);
-				m_PersonalPrefs.ListCountLimit = Mathf.Clamp(m_PersonalPrefs.ListCountLimit, 0, 1024); // More round.
-
-				const string spaceBetweenGroupsHint = "Space in pixels added before every group of scenes.\nScenes in the same folder are considered as a group.";
-				m_PersonalPrefs.SpaceBetweenGroups = EditorGUILayout.IntField(new GUIContent("Padding for groups", spaceBetweenGroupsHint), m_PersonalPrefs.SpaceBetweenGroups);
-				m_PersonalPrefs.SpaceBetweenGroups = Mathf.Clamp(m_PersonalPrefs.SpaceBetweenGroups, 0, (int)EditorGUIUtility.singleLineHeight);
-
-				m_PersonalPrefs.SpaceBetweenGroupsPinned = EditorGUILayout.IntField(new GUIContent("Padding for pinned groups", spaceBetweenGroupsHint), m_PersonalPrefs.SpaceBetweenGroupsPinned);
-				m_PersonalPrefs.SpaceBetweenGroupsPinned = Mathf.Clamp(m_PersonalPrefs.SpaceBetweenGroupsPinned, 0, 16); // More round.
-
-				// Colorize Patterns
-				{
-					var so = new SerializedObject(this);
-					var sp = so.FindProperty("m_PersonalPrefs");
-
-					EditorGUILayout.PropertyField(sp.FindPropertyRelative("ColorizePatterns"), PreferencesColorizePatternsLabelContent, true);
-					EditorGUILayout.PropertyField(sp.FindPropertyRelative("Exclude"), PreferencesExcludePatternsLabelContent, true);
-
-					so.ApplyModifiedProperties();
-
-
-					foreach(var cf in m_PersonalPrefs.ColorizePatterns) {
-						if (string.IsNullOrEmpty(cf.Patterns)) {
-							cf.BackgroundColor = Color.white;
-							cf.TextColor = Color.black;
-						}
-					}
-				}
-
-				EditorGUI.indentLevel--;
+			switch (m_SelectedTab) {
+				case PreferencesTab.Personal:
+					DrawPersonalPreferences();
+					break;
+				case PreferencesTab.Project:
+					DrawProjectPreferences();
+					break;
+				case PreferencesTab.About:
+					DrawAboutPreferences();
+					break;
 			}
-
-			EditorGUILayout.Space();
-
-			//
-			// Project Preferences
-			//
-			m_PreferencesProjectFold = EditorGUILayout.Foldout(m_PreferencesProjectFold, "Project Preferences:", FoldOutBoldStyle);
-			if (m_PreferencesProjectFold) {
-
-				EditorGUI.indentLevel++;
-
-				EditorGUILayout.HelpBox("These settings will be saved in the ProjectSettings folder.\nFeel free to add them to your version control system.\nCoordinate any changes here with your team.", MessageType.Warning);
-
-				var so = new SerializedObject(this);
-				var sp = so.FindProperty("m_ProjectPrefs");
-
-				EditorGUILayout.PropertyField(sp.FindPropertyRelative("ColorizePatterns"), PreferencesColorizePatternsLabelContent, true);
-				EditorGUILayout.PropertyField(sp.FindPropertyRelative("Exclude"), PreferencesExcludePatternsLabelContent, true);
-
-				so.ApplyModifiedProperties();
-
-
-				foreach (var cf in m_ProjectPrefs.ColorizePatterns) {
-					if (string.IsNullOrEmpty(cf.Patterns)) {
-						cf.BackgroundColor = Color.white;
-						cf.TextColor = Color.black;
-					}
-				}
-
-				EditorGUI.indentLevel--;
-			}
-
-			EditorGUILayout.Space();
-
-			//
-			// About
-			//
-			m_PreferencesAboutFold = EditorGUILayout.Foldout(m_PreferencesAboutFold, "About:", FoldOutBoldStyle);
-			if (m_PreferencesAboutFold) {
-				EditorGUI.indentLevel++;
-
-				EditorGUILayout.LabelField("Created by Filip Slavov (NibbleByte)");
-
-				EditorGUILayout.BeginHorizontal();
-
-				if (GUILayout.Button("Plugin at Asset Store", GUILayout.MaxWidth(EditorGUIUtility.labelWidth))) {
-					EditorUtility.DisplayDialog("Under construction", "Asset Store plugin is coming really soon...", "Fine");
-				}
-
-				if (GUILayout.Button("Source at GitHub", GUILayout.MaxWidth(EditorGUIUtility.labelWidth))) {
-					var githubURL = "https://github.com/NibbleByte/AssetsManagementTools";
-					Application.OpenURL(githubURL);
-				}
-
-				EditorGUILayout.EndHorizontal();
-
-				EditorGUI.indentLevel--;
-			}
-
-			GUILayout.Space(16f);
 
 			EditorGUILayout.EndScrollView();
 		}
@@ -1616,7 +1513,102 @@ namespace DevLocker.Tools.AssetsManagement
 			StorePrefs();
 
 			m_ShowPreferences = false;
+			m_SelectedTab = PreferencesTab.Personal;
 			AssetsChanged = true;
+		}
+
+		private void DrawPersonalPreferences()
+		{
+			EditorGUILayout.HelpBox("These are personal preferences, stored in the Library folder.\nHint: check the the tooltips.", MessageType.Info);
+
+			m_PersonalPrefs.SortType = (SortType)EditorGUILayout.EnumPopup(new GUIContent("Sort by", "How to automatically sort the list of scenes (not the pinned ones).\nNOTE: Changing this will loose the \"Most Recent\" sort done by now."), m_PersonalPrefs.SortType);
+			m_PersonalPrefs.SceneDisplay = (SceneDisplay)EditorGUILayout.EnumPopup(new GUIContent("Display entries", "How scenes should be displayed."), m_PersonalPrefs.SceneDisplay);
+
+			if (m_PersonalPrefs.SceneDisplay == SceneDisplay.SceneNamesWithParents) {
+				EditorGUI.indentLevel++;
+				m_PersonalPrefs.DisplayParentsCount = EditorGUILayout.IntField(new GUIContent("Parents depth", "How many parent folders to show.\nExample: Assets/Scenes/GUI/Foo.unity\n> 1 displays \"GUI/Foo\"\n> 2 displays \"Scenes/GUI/Foo\"\netc..."), m_PersonalPrefs.DisplayParentsCount);
+				m_PersonalPrefs.DisplayParentsCount = Mathf.Clamp(m_PersonalPrefs.DisplayParentsCount, 1, 1024); // More round.
+				EditorGUI.indentLevel--;
+			}
+
+			if (m_PersonalPrefs.SceneDisplay == SceneDisplay.SceneFullPathsOmitFolders) {
+				EditorGUI.indentLevel++;
+
+				var so = new SerializedObject(this);
+				var sp = so.FindProperty("m_PersonalPrefs").FindPropertyRelative("DisplayRemoveFolders");
+
+				EditorGUILayout.PropertyField(sp, new GUIContent("Omit folders", "List of folders that will be removed from the displayed path. Example: Remove \"Assets\" folder from the path."), true);
+
+				so.ApplyModifiedProperties();
+
+				EditorGUI.indentLevel--;
+			}
+
+			m_PersonalPrefs.ListCountLimit = EditorGUILayout.IntField(new GUIContent("Shown scenes limit", "If the scenes in the list are more than this value, they will be truncated (button \"Show All\" is shown).\nTruncated scenes still participate in the search.\n\nThis is very useful in a project with lots of scenes, where drawing large scrollable lists is expensive."), m_PersonalPrefs.ListCountLimit);
+			m_PersonalPrefs.ListCountLimit = Mathf.Clamp(m_PersonalPrefs.ListCountLimit, 0, 1024); // More round.
+
+			const string spaceBetweenGroupsHint = "Space in pixels added before every group of scenes.\nScenes in the same folder are considered as a group.";
+			m_PersonalPrefs.SpaceBetweenGroups = EditorGUILayout.IntField(new GUIContent("Padding for groups", spaceBetweenGroupsHint), m_PersonalPrefs.SpaceBetweenGroups);
+			m_PersonalPrefs.SpaceBetweenGroups = Mathf.Clamp(m_PersonalPrefs.SpaceBetweenGroups, 0, (int)EditorGUIUtility.singleLineHeight);
+
+			m_PersonalPrefs.SpaceBetweenGroupsPinned = EditorGUILayout.IntField(new GUIContent("Padding for pinned groups", spaceBetweenGroupsHint), m_PersonalPrefs.SpaceBetweenGroupsPinned);
+			m_PersonalPrefs.SpaceBetweenGroupsPinned = Mathf.Clamp(m_PersonalPrefs.SpaceBetweenGroupsPinned, 0, 16); // More round.
+
+			// Colorize Patterns
+			{
+				var so = new SerializedObject(this);
+				var sp = so.FindProperty("m_PersonalPrefs");
+
+				EditorGUILayout.PropertyField(sp.FindPropertyRelative("ColorizePatterns"), PreferencesColorizePatternsLabelContent, true);
+				EditorGUILayout.PropertyField(sp.FindPropertyRelative("Exclude"), PreferencesExcludePatternsLabelContent, true);
+
+				so.ApplyModifiedProperties();
+
+
+				foreach (var cf in m_PersonalPrefs.ColorizePatterns) {
+					if (string.IsNullOrEmpty(cf.Patterns)) {
+						cf.BackgroundColor = Color.white;
+						cf.TextColor = Color.black;
+					}
+				}
+			}
+		}
+
+		private void DrawProjectPreferences()
+		{
+			EditorGUILayout.HelpBox("These settings will be saved in the ProjectSettings folder.\nFeel free to add them to your version control system.\nCoordinate any changes here with your team.", MessageType.Warning);
+
+			var so = new SerializedObject(this);
+			var sp = so.FindProperty("m_ProjectPrefs");
+
+			EditorGUILayout.PropertyField(sp.FindPropertyRelative("ColorizePatterns"), PreferencesColorizePatternsLabelContent, true);
+			EditorGUILayout.PropertyField(sp.FindPropertyRelative("Exclude"), PreferencesExcludePatternsLabelContent, true);
+
+			so.ApplyModifiedProperties();
+
+
+			foreach (var cf in m_ProjectPrefs.ColorizePatterns) {
+				if (string.IsNullOrEmpty(cf.Patterns)) {
+					cf.BackgroundColor = Color.white;
+					cf.TextColor = Color.black;
+				}
+			}
+		}
+
+		private void DrawAboutPreferences()
+		{
+			EditorGUILayout.Space();
+
+			EditorGUILayout.LabelField("Created by Filip Slavov (NibbleByte)");
+
+			if (GUILayout.Button("Plugin at Asset Store", GUILayout.MaxWidth(EditorGUIUtility.labelWidth))) {
+				EditorUtility.DisplayDialog("Under construction", "Asset Store plugin is coming really soon...", "Fine");
+			}
+
+			if (GUILayout.Button("Source at GitHub", GUILayout.MaxWidth(EditorGUIUtility.labelWidth))) {
+				var githubURL = "https://github.com/NibbleByte/AssetsManagementTools";
+				Application.OpenURL(githubURL);
+			}
 		}
 
 		// NOTE: Copy pasted from SearchAssetsFilter.
