@@ -1597,7 +1597,7 @@ namespace DevLocker.Tools.AssetsManagement
 
 		private void DrawAboutPreferences()
 		{
-			EditorGUILayout.Space();
+			EditorGUILayout.LabelField("About:", EditorStyles.boldLabel);
 
 			EditorGUILayout.LabelField("Created by Filip Slavov (NibbleByte)");
 

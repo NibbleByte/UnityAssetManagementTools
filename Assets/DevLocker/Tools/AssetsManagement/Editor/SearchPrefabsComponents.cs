@@ -24,7 +24,7 @@ namespace DevLocker.Tools.AssetsManagement
 		{
 			Repaint();
 		}
-		
+
 
 		private string _searchGONameFilter = "";
 		private string _searchComponentNamesPattern = "";
@@ -96,11 +96,6 @@ namespace DevLocker.Tools.AssetsManagement
 				if (string.IsNullOrEmpty(_searchGONameFilter.Trim()) && string.IsNullOrEmpty(_searchComponentNamesPattern.Trim()))
 					return;
 
-				if (Selection.objects.Length == 0) {
-					Debug.LogError("Please select some folders/prefabs to search in.");
-					return;
-				}
-
 				var searchPattern = GetSearchPattern(_searchComponentNamesPattern);
 				if (searchPattern == null)
 					return;
@@ -161,7 +156,7 @@ namespace DevLocker.Tools.AssetsManagement
 					SearchPrefabsForComponent((GameObject)selected, (GameObject)selected, nameFilter, searchPattern);
 					continue;
 				}
-				
+
 				var path = AssetDatabase.GetAssetPath(selected);
 				var guids = AssetDatabase.FindAssets("t:Prefab", new string[] {path});
 
@@ -211,7 +206,7 @@ namespace DevLocker.Tools.AssetsManagement
 					} else {
 						Selection.activeObject = data.InstantiateInScene();
 					}
-					
+
 				}
 
 				EditorGUILayout.EndHorizontal();
@@ -270,7 +265,7 @@ namespace DevLocker.Tools.AssetsManagement
 			}
 		}
 
-		
+
 
 
 		private class SearchResultData
