@@ -51,7 +51,9 @@ namespace DevLocker.Tools.AssetsManagement
 
 		private Object _searchObject;
 		private string _searchPattern = string.Empty;
+		private bool _searchPatternEnabled = true;
 		private string _replacePattern = string.Empty;
+		private bool _replacePatternEnabled = true;
 		private string _prefix = string.Empty;
 		private string _suffix = string.Empty;
 		private bool _folders = true;
@@ -109,9 +111,30 @@ namespace DevLocker.Tools.AssetsManagement
 				EditorGUI.EndDisabledGroup();
 			}
 
+			EditorGUILayout.BeginHorizontal();
+			{
+				EditorGUI.BeginDisabledGroup(!_searchPatternEnabled);
+				var labelContent = new GUIContent("Search Pattern", "Searched text in the objects' names.\nDisable to match any names.");
+				_searchPattern = TextFieldWithPlaceholder(labelContent, _searchPattern, _useCounters ? "Use \\d to match any numbers..." : "");
+				EditorGUI.EndDisabledGroup();
 
-			_searchPattern = EditorGUILayout.TextField("Search Pattern", _searchPattern);
-			_replacePattern = EditorGUILayout.TextField("Replace Pattern", _replacePattern);
+				_searchPatternEnabled = EditorGUILayout.Toggle(_searchPatternEnabled, GUILayout.Width(16));
+
+			}
+			EditorGUILayout.EndHorizontal();
+
+
+			EditorGUILayout.BeginHorizontal();
+			{
+				EditorGUI.BeginDisabledGroup(!_replacePatternEnabled);
+				var labelContent = new GUIContent("Replace Pattern", "Replace the searched part of the objects' names.\nDisable to leave final names untouched. Useful with prefix / suffix.");
+				_replacePattern = TextFieldWithPlaceholder(labelContent, _replacePattern, _useCounters ? "Use \\d to insert number..." : "");
+				EditorGUI.EndDisabledGroup();
+
+				_replacePatternEnabled = EditorGUILayout.Toggle(_replacePatternEnabled, GUILayout.Width(16));
+
+			}
+			EditorGUILayout.EndHorizontal();
 
 			EditorGUILayout.BeginHorizontal();
 			EditorGUILayout.LabelField("Prefix / Suffix", GUILayout.Width(EditorGUIUtility.labelWidth - 4f));
@@ -292,8 +315,13 @@ namespace DevLocker.Tools.AssetsManagement
 			var suffixPattern = _useCounters ? _suffix.Replace(CountersPattern, counterStr) : _suffix;
 			var regexOptions = _caseSensitive ? RegexOptions.None : RegexOptions.IgnoreCase;
 
+			if (!_replacePatternEnabled) {
+				renamedName = prefixPattern + targetName + suffixPattern;
+				return true;
+			}
+
 			// Full name change.
-			if (string.IsNullOrEmpty(_searchPattern)) {
+			if (string.IsNullOrEmpty(_searchPattern) || !_searchPatternEnabled) {
 				renamedName = prefixPattern + replacePattern + suffixPattern;
 				return true;
 			}
@@ -457,6 +485,26 @@ namespace DevLocker.Tools.AssetsManagement
 			if (hasErrors) {
 				EditorUtility.DisplayDialog("Error", "Something bad happened while executing the operation. Check the error logs.", "I Will!");
 			}
+		}
+
+		private static GUIStyle PlaceholderTextStyle = null;
+		private static string TextFieldWithPlaceholder(GUIContent label, string text, string placeholderText)
+		{
+			if (PlaceholderTextStyle == null) {
+				PlaceholderTextStyle = new GUIStyle(EditorStyles.centeredGreyMiniLabel);
+				PlaceholderTextStyle.alignment = EditorStyles.label.alignment;
+			}
+
+			var rect = EditorGUILayout.GetControlRect();
+			text = EditorGUI.TextField(rect, label, text);
+
+			if (string.IsNullOrEmpty(text)) {
+				rect.width -= EditorGUIUtility.labelWidth;
+				rect.x += EditorGUIUtility.labelWidth;
+				EditorGUI.LabelField(rect, placeholderText, PlaceholderTextStyle);
+			}
+
+			return text;
 		}
 	}
 }
