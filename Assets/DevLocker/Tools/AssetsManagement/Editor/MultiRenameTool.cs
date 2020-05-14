@@ -90,7 +90,7 @@ namespace DevLocker.Tools.AssetsManagement
 
 		private bool _editorLocked = false;
 
-		private bool _showAbout = false;
+		private bool _showHelpAbout = false;
 
 		private const string CountersPattern = @"\d";
 
@@ -110,6 +110,7 @@ namespace DevLocker.Tools.AssetsManagement
 
 		private List<RenameData> _renameData = new List<RenameData>();
 		private Vector2 _scrollPos;
+		private Vector2 _helpAboutScrollPos;
 
 
 		void OnGUI()
@@ -118,8 +119,8 @@ namespace DevLocker.Tools.AssetsManagement
 
 			EditorGUILayout.LabelField("Multi-Rename Tool", EditorStyles.boldLabel);
 
-			if (_showAbout) {
-				DrawAbout();
+			if (_showHelpAbout) {
+				DrawHelpAbout();
 				return;
 			}
 
@@ -256,8 +257,8 @@ namespace DevLocker.Tools.AssetsManagement
 					PerformSearch(searchObjects);
 				}
 
-				if (GUILayout.Button("About", GUILayout.Width(45f))) {
-					_showAbout = true;
+				if (GUILayout.Button("Help", GUILayout.Width(45f))) {
+					_showHelpAbout = true;
 				}
 			}
 			EditorGUILayout.EndHorizontal();
@@ -349,6 +350,10 @@ namespace DevLocker.Tools.AssetsManagement
 
 			int nextCounter = _startCounter;
 
+			// Force find results according to search. Otherwise will match all files.
+			var prevReplaceEnabled = _replacePatternEnabled;
+			_replacePatternEnabled = true;
+
 			for (int i = 0; i < allTargets.Count; ++i) {
 				var target = allTargets[i];
 
@@ -373,6 +378,8 @@ namespace DevLocker.Tools.AssetsManagement
 					}
 				}
 			}
+
+			_replacePatternEnabled = prevReplaceEnabled;
 
 			EditorUtility.ClearProgressBar();
 		}
@@ -725,8 +732,42 @@ namespace DevLocker.Tools.AssetsManagement
 			return text;
 		}
 
-		private void DrawAbout()
+		private void DrawHelpAbout()
 		{
+			_helpAboutScrollPos = EditorGUILayout.BeginScrollView(_helpAboutScrollPos);
+
+			EditorGUILayout.LabelField("Help:", EditorStyles.boldLabel);
+
+			const string helpText =
+				"1. Type in search pattern.\n" +
+				"2. Type in replace pattern.\n" +
+				"3. Select folder or objects to search in.\n" +
+				"4. Press \"Search Selected\"\n" +
+				"5. Preview the results before executing.\n" +
+				"6. Modify results or query to your liking.\n" +
+				"  -> query changes will update results instantly.\n" +
+				"7. Press \"Execute Rename\".\n" +
+				"8. Check the logs for details.\n" +
+				"\n" +
+				"Alternatively, drag objects directly to the list of results.\n" +
+				"\n" +
+				"Pro Tip # 1:\n" +
+				"\"Use numbers\" will parse your search / replace patterns for numbers.\n" +
+				"Use \"\\d\" to indicate numbers in your pattern.\n" +
+				"\n" +
+				"Pro Tip # 2:\n" +
+				"Deactivate search pattern to match any names.\n" +
+				"Deactivate replace pattern to keep the original name.\n" +
+				"(useful with prefix / suffix)\n" +
+				"\n" +
+				"Pro Tip # 3:\n" +
+				"Works with assets and scene objects.";
+
+			EditorGUILayout.LabelField(helpText, EditorStyles.helpBox);
+			EditorGUILayout.EndScrollView();
+
+			EditorGUILayout.Space();
+
 			EditorGUILayout.LabelField("About:", EditorStyles.boldLabel);
 
 			EditorGUILayout.LabelField("Created by Filip Slavov (NibbleByte)");
@@ -740,13 +781,16 @@ namespace DevLocker.Tools.AssetsManagement
 				Application.OpenURL(githubURL);
 			}
 
-
 			EditorGUILayout.Space();
 
 			if (GUILayout.Button("Close", GUILayout.MaxWidth(150f))) {
-				_showAbout = false;
+				_showHelpAbout = false;
 				return;
 			}
+
+			EditorGUILayout.Space();
+
+			GUILayout.FlexibleSpace();
 		}
 	}
 }
