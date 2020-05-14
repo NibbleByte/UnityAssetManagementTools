@@ -48,6 +48,18 @@ namespace DevLocker.Tools.AssetsManagement
 			}
 		}
 
+		[Flags]
+		private enum RecursiveModes
+		{
+			None = 0,
+
+			Folders = 1 << 0,
+			SceneHierarchy = 1 << 1,
+			SubAssets = 1 << 2,
+
+			All = ~0,
+		}
+
 
 		private Object _searchObject;
 		private string _searchPattern = string.Empty;
@@ -57,7 +69,7 @@ namespace DevLocker.Tools.AssetsManagement
 		private string _prefix = string.Empty;
 		private string _suffix = string.Empty;
 		private bool _folders = true;
-		private bool _recursive = true;
+		private RecursiveModes _recursiveModes = RecursiveModes.All;
 		private bool _caseSensitive = true;
 
 		private bool _useCounters = false;
@@ -101,12 +113,14 @@ namespace DevLocker.Tools.AssetsManagement
 
 			} else {
 				EditorGUI.BeginDisabledGroup(true);
-				if (Selection.assetGUIDs.Length <= 1) {
-					var path = AssetDatabase.GUIDToAssetPath(Selection.assetGUIDs.FirstOrDefault());
-					var name = string.IsNullOrEmpty(path) ? "null" : Path.GetFileNameWithoutExtension(path);
+
+				var selection = GetUnitySelection();
+
+				if (selection.Length <= 1) {
+					var name = !selection.Any() ? "null" : selection.FirstOrDefault().name;
 					EditorGUILayout.TextField("Selected Object", name);
 				} else {
-					EditorGUILayout.TextField("Selected Object", $"{Selection.assetGUIDs.Length} Objects");
+					EditorGUILayout.TextField("Selected Object", $"{selection.Length} Objects");
 				}
 				EditorGUI.EndDisabledGroup();
 			}
@@ -142,18 +156,24 @@ namespace DevLocker.Tools.AssetsManagement
 			_suffix = EditorGUILayout.TextField(_suffix);
 			EditorGUILayout.EndHorizontal();
 
+			var prevLabelWidth = EditorGUIUtility.labelWidth;
+
 			EditorGUILayout.BeginHorizontal();
-			_folders = EditorGUILayout.Toggle("Folders", _folders);
+			_folders = EditorGUILayout.Toggle("Folders:", _folders);
+
 			GUILayout.Space(8);
-			_recursive = EditorGUILayout.Toggle("Recursive", _recursive);
+			EditorGUIUtility.labelWidth = 70;
+			_recursiveModes = (RecursiveModes) EditorGUILayout.EnumFlagsField("Recursive:", _recursiveModes, GUILayout.Width(160));
+			EditorGUIUtility.labelWidth = prevLabelWidth;
+
 			GUILayout.FlexibleSpace();
 			EditorGUILayout.EndHorizontal();
 
-			_caseSensitive = EditorGUILayout.Toggle("Case Sensitive", _caseSensitive);
 
-			_useCounters = EditorGUILayout.Toggle("Use numbers", _useCounters);
+			_caseSensitive = EditorGUILayout.Toggle("Case Sensitive:", _caseSensitive);
+
+			_useCounters = EditorGUILayout.Toggle("Use numbers:", _useCounters);
 			if (_useCounters) {
-				var prevLabelWidth = EditorGUIUtility.labelWidth;
 
 				EditorGUILayout.BeginHorizontal();
 				{
@@ -188,28 +208,12 @@ namespace DevLocker.Tools.AssetsManagement
 
 			if (GUILayout.Button("Search Selected")) {
 
-				List<Object> searchObjects;
+				IReadOnlyList<Object> searchObjects;
 
 				if (_editorLocked) {
 					searchObjects = _searchObject ? new List<Object> { _searchObject } : new List<Object>();
 				} else {
-					searchObjects = new List<Object>();
-
-					// Selection.objects keeps the order in which the user selected the objects.
-					searchObjects.AddRange(Selection.objects);
-
-					// Selection.assetGUIDs doesn't guarantee order, but gives selected folders on the left pane of the project two-column view.
-					// Order is important if used with counters.
-					var objectsByGuids = Selection.assetGUIDs
-					.Select(AssetDatabase.GUIDToAssetPath)
-					.Select(AssetDatabase.LoadAssetAtPath<Object>)
-					;
-
-					foreach(var obj in objectsByGuids) {
-						if (!searchObjects.Contains(obj)) {
-							searchObjects.Add(obj);
-						}
-					}
+					searchObjects = GetUnitySelection();
 				}
 
 				if (searchObjects.Count == 0) {
@@ -229,51 +233,68 @@ namespace DevLocker.Tools.AssetsManagement
 			DrawResults();
 		}
 
-		private void PerformSearch(List<Object> targets)
+		private Object[] GetUnitySelection()
+		{
+			var searchObjects = new List<Object>();
+
+			// If scene game objects selected, just return that.
+			// This fails if user selects folders on the left pane in project two-column view.
+			if (!Selection.objects.All(AssetDatabase.Contains)) {	// All(empty) => true
+				return Selection.objects;
+			}
+
+			// Selection.assetGUIDs doesn't guarantee order, but gives selected folders on the left pane of the project two-column view.
+			// Order is important if used with counters.
+			// It also has the latest selection (folders on left pane VS selected assets on right pane). Except for scene GOs.
+			// Selection.objects doesn't update if folders on left side are selected.
+			// Selection.assetGUIDs wouldn't give sub assets (because they all have the same GUIDs).
+			// Selection.assetGUIDs wouldn't give scene game objects.
+			var assetObjects = Selection.assetGUIDs
+				.Select(AssetDatabase.GUIDToAssetPath)
+				.Select(AssetDatabase.LoadMainAssetAtPath)
+			;
+
+
+			// Selecting folders in the left pane would result in folder objects different from the Selection.objects.
+			// This fails if user selects folders on both panes, but who cares...
+			// DefaultAsset is folder (probably).
+			if (assetObjects.Any() && assetObjects.All(obj => obj is DefaultAsset && !Selection.objects.Contains(obj))) {
+				return assetObjects.ToArray();
+			} else {
+
+				// Selection.objects keeps the order in which the user selected the objects.
+				return Selection.objects;
+			}
+		}
+
+		private void PerformSearch(IReadOnlyList<Object> targets)
 		{
 			_renameData.Clear();
 
 			List<Object> allTargets = new List<Object>(targets.Count);
 			foreach (var target in targets) {
 
+				// Scriptable object with deleted script will cause this.
+				if (target == null) {
+					Debug.LogError($"Invalid asset found at \"{AssetDatabase.GetAssetPath(target)}\".");
+					continue;
+				}
+
 				if (!allTargets.Contains(target)) {
 					allTargets.Add(target);
 				}
 
-				if (_recursive) {
-					if (AssetDatabase.Contains(target)) {
+				if ((_recursiveModes & RecursiveModes.Folders) != 0) {
+					var includeSubAssets = (_recursiveModes & RecursiveModes.SubAssets) != 0;
+					TryAppendFolderAssets(target, allTargets, includeSubAssets);
+				}
 
-						// Folder (probably).
-						if (target is DefaultAsset) {
+				if ((_recursiveModes & RecursiveModes.SubAssets) != 0) {
+					TryAppendSubAssets(target, allTargets);
+				}
 
-							var guids = AssetDatabase.FindAssets("", new string[] { AssetDatabase.GetAssetPath(target) });
-							foreach (var guid in guids) {
-								var foundTarget = AssetDatabase.LoadAssetAtPath<Object>(AssetDatabase.GUIDToAssetPath(guid));
-
-								// Scriptable object with deleted script will cause this.
-								if (foundTarget == null) {
-									Debug.LogError($"Invalid asset found at \"{AssetDatabase.GUIDToAssetPath(guid)}\".");
-									continue;
-								}
-
-								if (!AssetDatabase.IsMainAsset(foundTarget))
-									continue;
-
-								if (!allTargets.Contains(foundTarget)) {
-									allTargets.Add(foundTarget);
-								}
-							}
-						}
-
-					} else {
-
-						var go = (GameObject) target;
-						foreach (var foundTarget in go.GetComponentsInChildren<Transform>().Select(t => t.gameObject)) {
-							if (!allTargets.Contains(foundTarget)) {
-								allTargets.Add(foundTarget);
-							}
-						}
-					}
+				if ((_recursiveModes & RecursiveModes.SceneHierarchy) != 0) {
+					TryAppendSceneHierarchyGameObjects(target, allTargets);
 				}
 			}
 
@@ -291,7 +312,7 @@ namespace DevLocker.Tools.AssetsManagement
 				if (target is DefaultAsset && !_folders)
 					continue;
 
-				string targetName = AssetDatabase.Contains(target) ? Path.GetFileNameWithoutExtension(AssetDatabase.GetAssetPath(target)) : target.name;
+				string targetName = target.name;
 				string renamedName;
 
 				if (TryRename(targetName, nextCounter, out renamedName)) {
@@ -339,6 +360,61 @@ namespace DevLocker.Tools.AssetsManagement
 			renamedName = prefixPattern + renamedName + suffixPattern;
 
 			return true;
+		}
+
+		private void TryAppendFolderAssets(Object target, List<Object> allTargets, bool includeSubAssets)
+		{
+			// Folder (probably).
+			if (AssetDatabase.Contains(target) && target is DefaultAsset) {
+				var guids = AssetDatabase.FindAssets("", new string[] { AssetDatabase.GetAssetPath(target) });
+				foreach (var guid in guids) {
+					var foundTarget = AssetDatabase.LoadMainAssetAtPath(AssetDatabase.GUIDToAssetPath(guid));
+
+					// Scriptable object with deleted script will cause this.
+					if (foundTarget == null) {
+						Debug.LogError($"Invalid asset found at \"{AssetDatabase.GUIDToAssetPath(guid)}\".");
+						continue;
+					}
+
+					if (!allTargets.Contains(foundTarget)) {
+						allTargets.Add(foundTarget);
+					}
+
+					if (includeSubAssets) {
+						TryAppendSubAssets(foundTarget, allTargets);
+					}
+				}
+			}
+		}
+
+		private void TryAppendSubAssets(Object target, List<Object> allTargets)
+		{
+			if (AssetDatabase.Contains(target)) {
+				var subAssets = AssetDatabase.LoadAllAssetRepresentationsAtPath(AssetDatabase.GetAssetPath(target));
+				foreach (var subAsset in subAssets) {
+					// Scriptable object with deleted script will cause this.
+					if (subAsset == null) {
+						Debug.LogError($"Invalid asset found at \"{AssetDatabase.GetAssetPath(target)}\".");
+						continue;
+					}
+
+					if (!allTargets.Contains(subAsset)) {
+						allTargets.Add(subAsset);
+					}
+				}
+			}
+		}
+
+		private void TryAppendSceneHierarchyGameObjects(Object target, List<Object> allTargets)
+		{
+			if (!AssetDatabase.Contains(target) && target is GameObject) {
+				var go = (GameObject) target;
+				foreach (var foundTarget in go.GetComponentsInChildren<Transform>().Select(t => t.gameObject)) {
+					if (!allTargets.Contains(foundTarget)) {
+						allTargets.Add(foundTarget);
+					}
+				}
+			}
 		}
 
 		private void RefreshRenameData()
@@ -416,6 +492,7 @@ namespace DevLocker.Tools.AssetsManagement
 		private void ExecuteRename()
 		{
 			bool hasErrors = false;
+			bool assetsChanged = false;
 
 			var builder = new StringBuilder();
 			builder.AppendLine("Rename results:");
@@ -455,14 +532,26 @@ namespace DevLocker.Tools.AssetsManagement
 					continue;
 
 				if (AssetDatabase.Contains(data.Target)) {
-					string targetPath = AssetDatabase.GetAssetPath(data.Target);
 
-					string error = AssetDatabase.RenameAsset(targetPath, data.RenamedName);
-					if (!string.IsNullOrEmpty(error)) {
-						Debug.LogError($"Could not rename asset: \"{targetPath}\" to \"{data.RenamedName}\".\nError: {error}.");
-						hasErrors = true;
+					if (AssetDatabase.IsSubAsset(data.Target)) {
+
+						builder.AppendLine($"{AssetDatabase.GetAssetPath(data.Target)} - {data.Target.name} => {data.RenamedName}");
+						data.Target.name = data.RenamedName;
+						EditorUtility.SetDirty(data.Target);
+						assetsChanged = true;
+
 					} else {
-						builder.AppendLine($"{targetPath} => {data.RenamedName}");
+
+						string targetPath = AssetDatabase.GetAssetPath(data.Target);
+
+						string error = AssetDatabase.RenameAsset(targetPath, data.RenamedName);
+						if (!string.IsNullOrEmpty(error)) {
+							Debug.LogError($"Could not rename asset: \"{targetPath}\" to \"{data.RenamedName}\".\nError: {error}.");
+							hasErrors = true;
+						} else {
+							builder.AppendLine($"{targetPath} => {data.RenamedName}");
+							assetsChanged = true;
+						}
 					}
 				} else {
 					Undo.RecordObject(data.Target, "Multi-Rename");
@@ -481,6 +570,10 @@ namespace DevLocker.Tools.AssetsManagement
 			Debug.Log(builder.ToString());
 
 			EditorUtility.ClearProgressBar();
+
+			if (assetsChanged) {
+				AssetDatabase.SaveAssets();
+			}
 
 			if (hasErrors) {
 				EditorUtility.DisplayDialog("Error", "Something bad happened while executing the operation. Check the error logs.", "I Will!");
