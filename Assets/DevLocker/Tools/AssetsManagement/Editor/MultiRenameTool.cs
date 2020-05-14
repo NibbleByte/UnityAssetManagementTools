@@ -90,6 +90,8 @@ namespace DevLocker.Tools.AssetsManagement
 
 		private bool _editorLocked = false;
 
+		private bool _showAbout = false;
+
 		private const string CountersPattern = @"\d";
 
 		[Serializable]
@@ -115,6 +117,11 @@ namespace DevLocker.Tools.AssetsManagement
 			EditorGUILayout.Space();
 
 			EditorGUILayout.LabelField("Multi-Rename Tool", EditorStyles.boldLabel);
+
+			if (_showAbout) {
+				DrawAbout();
+				return;
+			}
 
 			EditorGUI.BeginChangeCheck();
 
@@ -229,23 +236,31 @@ namespace DevLocker.Tools.AssetsManagement
 				RefreshRenameData();
 			}
 
-			if (GUILayout.Button("Search Selected")) {
+			EditorGUILayout.BeginHorizontal();
+			{
+				if (GUILayout.Button("Search Selected")) {
 
-				IReadOnlyList<Object> searchObjects;
+					IReadOnlyList<Object> searchObjects;
 
-				if (_editorLocked) {
-					searchObjects = _searchObject ? new List<Object> { _searchObject } : new List<Object>();
-				} else {
-					searchObjects = GetUnitySelection();
+					if (_editorLocked) {
+						searchObjects = _searchObject ? new List<Object> { _searchObject } : new List<Object>();
+					} else {
+						searchObjects = GetUnitySelection();
+					}
+
+					if (searchObjects.Count == 0) {
+						EditorUtility.DisplayDialog("Error", "Please select some assets/objects to search in.", "Ok");
+						return;
+					}
+
+					PerformSearch(searchObjects);
 				}
 
-				if (searchObjects.Count == 0) {
-					EditorUtility.DisplayDialog("Error", "Please select some assets/objects to search in.", "Ok");
-					return;
+				if (GUILayout.Button("About", GUILayout.Width(45f))) {
+					_showAbout = true;
 				}
-
-				PerformSearch(searchObjects);
 			}
+			EditorGUILayout.EndHorizontal();
 
 			EditorGUILayout.BeginHorizontal();
 			EditorGUI.BeginDisabledGroup(_renameData.Count == 0);
@@ -254,7 +269,7 @@ namespace DevLocker.Tools.AssetsManagement
 					ExecuteRename();
 				}
 
-				if (GUILayout.Button("Clear", GUILayout.ExpandWidth(false))) {
+				if (GUILayout.Button("Clear", GUILayout.Width(45f))) {
 					_renameData.Clear();
 				}
 			}
@@ -708,6 +723,30 @@ namespace DevLocker.Tools.AssetsManagement
 			}
 
 			return text;
+		}
+
+		private void DrawAbout()
+		{
+			EditorGUILayout.LabelField("About:", EditorStyles.boldLabel);
+
+			EditorGUILayout.LabelField("Created by Filip Slavov (NibbleByte)");
+
+			if (GUILayout.Button("Plugin at Asset Store", GUILayout.MaxWidth(EditorGUIUtility.labelWidth))) {
+				EditorUtility.DisplayDialog("Under construction", "Asset Store plugin is coming really soon...", "Fine");
+			}
+
+			if (GUILayout.Button("Source at GitHub", GUILayout.MaxWidth(EditorGUIUtility.labelWidth))) {
+				var githubURL = "https://github.com/NibbleByte/AssetsManagementTools";
+				Application.OpenURL(githubURL);
+			}
+
+
+			EditorGUILayout.Space();
+
+			if (GUILayout.Button("Close", GUILayout.MaxWidth(150f))) {
+				_showAbout = false;
+				return;
+			}
 		}
 	}
 }
