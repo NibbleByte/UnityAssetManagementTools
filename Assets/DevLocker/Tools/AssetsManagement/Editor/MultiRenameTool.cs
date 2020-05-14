@@ -247,11 +247,22 @@ namespace DevLocker.Tools.AssetsManagement
 				PerformSearch(searchObjects);
 			}
 
+			EditorGUILayout.BeginHorizontal();
 			EditorGUI.BeginDisabledGroup(_renameData.Count == 0);
-			if (GUILayout.Button("Execute Rename")) {
-				ExecuteRename();
+			{
+				if (GUILayout.Button("Execute Rename")) {
+					ExecuteRename();
+				}
+
+				if (GUILayout.Button("Clear", GUILayout.ExpandWidth(false))) {
+					_renameData.Clear();
+				}
 			}
 			EditorGUI.EndDisabledGroup();
+			EditorGUILayout.EndHorizontal();
+
+			GUILayout.Label("Results:", EditorStyles.boldLabel);
+			DrawDragObjects();
 
 			DrawResults();
 		}
@@ -465,8 +476,6 @@ namespace DevLocker.Tools.AssetsManagement
 
 		private void DrawResults()
 		{
-			GUILayout.Label("Results:", EditorStyles.boldLabel);
-
 			EditorGUILayout.BeginVertical();
 			_scrollPos = EditorGUILayout.BeginScrollView(_scrollPos, false, false);
 
@@ -514,6 +523,37 @@ namespace DevLocker.Tools.AssetsManagement
 
 			EditorGUILayout.EndScrollView();
 			EditorGUILayout.EndVertical();
+		}
+
+		private static GUIStyle DragDropZoneStyle = null;
+		private void DrawDragObjects()
+		{
+			if (DragDropZoneStyle == null) {
+				DragDropZoneStyle = new GUIStyle(EditorStyles.helpBox);
+				DragDropZoneStyle.alignment = TextAnchor.MiddleCenter;
+			}
+
+			var dropObjectsRect = EditorGUILayout.GetControlRect(GUILayout.Height(EditorGUIUtility.singleLineHeight * 1.5f));
+			GUI.Label(dropObjectsRect, "Drag and drop objects here to add to list!", DragDropZoneStyle);
+
+			if (dropObjectsRect.Contains(Event.current.mousePosition)) {
+
+				if (Event.current.type == EventType.DragUpdated) {
+					DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
+
+					Event.current.Use();
+
+				} else if (Event.current.type == EventType.DragPerform) {
+					var draggedDatas = DragAndDrop.objectReferences
+						.Where(o => _renameData.FindIndex(rd => rd.Target == o) == -1)	// No duplicates
+						.Select(o => new RenameData(o, ""))
+						;
+					_renameData.AddRange(draggedDatas);
+					RefreshRenameData();
+
+					Event.current.Use();
+				}
+			}
 		}
 
 		private void ExecuteRename()
