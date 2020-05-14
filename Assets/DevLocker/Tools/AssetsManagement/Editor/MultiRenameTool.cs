@@ -60,6 +60,15 @@ namespace DevLocker.Tools.AssetsManagement
 			All = ~0,
 		}
 
+		private enum TransformModes
+		{
+			None,
+			ToLower,
+			ToUpper,
+			CapitalizeWords,
+			TrimSpaces,
+		}
+
 
 		private Object _searchObject;
 		private string _searchPattern = string.Empty;
@@ -70,6 +79,7 @@ namespace DevLocker.Tools.AssetsManagement
 		private string _suffix = string.Empty;
 		private bool _folders = true;
 		private RecursiveModes _recursiveModes = RecursiveModes.All;
+		private TransformModes _transformMode = TransformModes.TrimSpaces;
 		private bool _caseSensitive = true;
 
 		private bool _useCounters = false;
@@ -162,15 +172,28 @@ namespace DevLocker.Tools.AssetsManagement
 			_folders = EditorGUILayout.Toggle("Folders:", _folders);
 
 			GUILayout.Space(8);
+
 			EditorGUIUtility.labelWidth = 70;
 			_recursiveModes = (RecursiveModes) EditorGUILayout.EnumFlagsField("Recursive:", _recursiveModes, GUILayout.Width(160));
 			EditorGUIUtility.labelWidth = prevLabelWidth;
 
 			GUILayout.FlexibleSpace();
+
 			EditorGUILayout.EndHorizontal();
 
 
+			EditorGUILayout.BeginHorizontal();
 			_caseSensitive = EditorGUILayout.Toggle("Case Sensitive:", _caseSensitive);
+
+			GUILayout.Space(8);
+
+			EditorGUIUtility.labelWidth = 70;
+			_transformMode = (TransformModes)EditorGUILayout.EnumPopup("Transform:", _transformMode, GUILayout.Width(160));
+			EditorGUIUtility.labelWidth = prevLabelWidth;
+
+			GUILayout.FlexibleSpace();
+
+			EditorGUILayout.EndHorizontal();
 
 			_useCounters = EditorGUILayout.Toggle("Use numbers:", _useCounters);
 			if (_useCounters) {
@@ -332,18 +355,18 @@ namespace DevLocker.Tools.AssetsManagement
 		{
 			var counterStr = counter.ToString().PadLeft(_counterLeadingZeroes, '0');
 			var replacePattern = _useCounters ? _replacePattern.Replace(CountersPattern, counterStr) : _replacePattern;
-			var prefixPattern = _useCounters ? _prefix.Replace(CountersPattern, counterStr) : _prefix;
-			var suffixPattern = _useCounters ? _suffix.Replace(CountersPattern, counterStr) : _suffix;
+			var prefixPattern = (_useCounters ? _prefix.Replace(CountersPattern, counterStr) : _prefix).TrimStart();
+			var suffixPattern = (_useCounters ? _suffix.Replace(CountersPattern, counterStr) : _suffix).TrimEnd();
 			var regexOptions = _caseSensitive ? RegexOptions.None : RegexOptions.IgnoreCase;
 
 			if (!_replacePatternEnabled) {
-				renamedName = prefixPattern + targetName + suffixPattern;
+				renamedName = prefixPattern + TransformName(targetName) + suffixPattern;
 				return true;
 			}
 
 			// Full name change.
 			if (string.IsNullOrEmpty(_searchPattern) || !_searchPatternEnabled) {
-				renamedName = prefixPattern + replacePattern + suffixPattern;
+				renamedName = prefixPattern + TransformName(replacePattern) + suffixPattern;
 				return true;
 			}
 
@@ -357,7 +380,7 @@ namespace DevLocker.Tools.AssetsManagement
 			}
 
 			renamedName = Regex.Replace(targetName, searchPattern, replacePattern, regexOptions);
-			renamedName = prefixPattern + renamedName + suffixPattern;
+			renamedName = prefixPattern + TransformName(renamedName) + suffixPattern;
 
 			return true;
 		}
@@ -460,6 +483,10 @@ namespace DevLocker.Tools.AssetsManagement
 					GUI.backgroundColor = Color.yellow;
 				}
 
+				if (data.Target && data.Target.name == data.RenamedName) {
+					GUI.backgroundColor = new Color(0.305f, 0.792f, 0.470f);
+				}
+
 				if (string.IsNullOrEmpty(data.RenamedName)) {
 					GUI.backgroundColor = new Color(0.801f, 0.472f, 0.472f);
 				}
@@ -531,6 +558,8 @@ namespace DevLocker.Tools.AssetsManagement
 				if (string.IsNullOrEmpty(data.RenamedName))
 					continue;
 
+				data.RenamedName = data.RenamedName.Trim();
+
 				if (AssetDatabase.Contains(data.Target)) {
 
 					if (AssetDatabase.IsSubAsset(data.Target)) {
@@ -577,6 +606,47 @@ namespace DevLocker.Tools.AssetsManagement
 
 			if (hasErrors) {
 				EditorUtility.DisplayDialog("Error", "Something bad happened while executing the operation. Check the error logs.", "I Will!");
+			}
+		}
+
+		private string TransformName(string targetName)
+		{
+			StringBuilder sb;
+
+			switch (_transformMode) {
+				case TransformModes.None:
+					return targetName;
+
+				case TransformModes.ToLower:
+					return targetName.ToLower();
+
+				case TransformModes.ToUpper:
+					return targetName.ToUpper();
+
+				case TransformModes.CapitalizeWords:
+					sb = new StringBuilder(targetName.Length);
+					for(int i = 0; i < targetName.Length; ++i) {
+						var ch = targetName[i];
+						if (i == 0) {
+							sb.Append(char.ToUpper(ch));
+							continue;
+						}
+
+						var prevCh = targetName[i - 1];
+						if (!char.IsLetter(prevCh)) {
+							ch = char.ToUpper(ch);
+						}
+
+						sb.Append(ch);
+					}
+
+					return sb.ToString();
+
+				case TransformModes.TrimSpaces:
+					return targetName.Trim();
+
+				default:
+					throw new NotSupportedException();
 			}
 		}
 
