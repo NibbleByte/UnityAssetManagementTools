@@ -81,7 +81,7 @@ namespace DevLocker.Tools.AssetsManagement
 			{
 				Path = path;
 				Name = System.IO.Path.GetFileNameWithoutExtension(Path);
-				Folder = Path.Substring(0, Path.LastIndexOf('/') - 1);
+				Folder = Path.Substring(0, Path.LastIndexOf('/'));
 			}
 
 			public string Path;
