@@ -541,7 +541,6 @@ namespace DevLocker.Tools.AssetsManagement
 		//
 		private void LoadData()
 		{
-			var personalPrefsData = EditorPrefs.GetString(PERSONAL_PREFERENCES_PATH, string.Empty);
 			if (File.Exists(PERSONAL_PREFERENCES_PATH)) {
 				m_PersonalPrefs = JsonUtility.FromJson<PersonalPreferences>(File.ReadAllText(PERSONAL_PREFERENCES_PATH));
 			} else {
@@ -1342,10 +1341,15 @@ namespace DevLocker.Tools.AssetsManagement
 			var menu = new GenericMenu();
 
 			Action<string, bool, List<SceneEntry>, QuickSortType> addItem = (menuPath, enabled, scenes, sortType) => {
-				if (enabled)
-					menu.AddItem(new GUIContent(menuPath, "Foo"), false, () => OnSelectQuickSortOption(scenes, sortType));
-				else
+				if (enabled) {
+					menu.AddItem(new GUIContent(menuPath), false, () => OnSelectQuickSortOption(scenes, sortType));
+				} else {
+#if UNITY_2017
+					menu.AddItem(new GUIContent(menuPath), false, null);
+#else
 					menu.AddDisabledItem(new GUIContent(menuPath), false);
+#endif
+				}
 			};
 
 			addItem("Sort Pinned/By Path", m_Pinned.Count > 0, m_Pinned, QuickSortType.ByPath);
@@ -1366,7 +1370,11 @@ namespace DevLocker.Tools.AssetsManagement
 					}
 				});
 			} else {
+#if UNITY_2017
+				menu.AddItem(new GUIContent("Clear All Pinned Scenes"), false, null);
+#else
 				menu.AddDisabledItem(new GUIContent("Clear All Pinned Scenes"), false);
+#endif
 			}
 
 			menu.AddSeparator("");
