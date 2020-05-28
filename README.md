@@ -5,7 +5,7 @@ Small collection of tools for Unity used to manage your assets. Part of the [Dev
 * [Scenes In Project](#scenes-in-project) *(the star of this project)*
 * [MultiRename Tool](#multirename-tool)
 * [Search Duplicate Assets](#search-duplicate-assets)
-* [Search References Fast!](#search-references-fast!) *(discontinued)*
+* [Search References Fast!](#search-references-fast) *(discontinued)*
 * [Search Prefabs Components](#search-prefabs-components)
 
 ## Installation

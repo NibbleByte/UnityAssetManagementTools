@@ -1601,6 +1601,15 @@ namespace DevLocker.Tools.AssetsManagement
 
 			EditorGUILayout.LabelField("Created by Filip Slavov (NibbleByte)");
 
+			if (GUILayout.Button("Help / Documentation", GUILayout.MaxWidth(EditorGUIUtility.labelWidth))) {
+				var assets = AssetDatabase.FindAssets("ScenesInProject-Documentation");
+				if (assets.Length == 0) {
+					EditorUtility.DisplayDialog("Documentation missing!", "The documentation you requested is missing.", "Ok");
+				} else {
+					Application.OpenURL(System.Environment.CurrentDirectory + "/"+ AssetDatabase.GUIDToAssetPath(assets[0]));
+				}
+			}
+
 			if (GUILayout.Button("Plugin at Asset Store", GUILayout.MaxWidth(EditorGUIUtility.labelWidth))) {
 				EditorUtility.DisplayDialog("Under construction", "Asset Store plugin is coming really soon...", "Fine");
 			}

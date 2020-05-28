@@ -1,0 +1,22 @@
+{
+    "ColorizePatterns": [
+        {
+            "Patterns": "Assets/1Scones/BBB",
+            "BackgroundColor": {
+                "r": 0.08690815418958664,
+                "g": 0.8773584961891174,
+                "b": 0.1387382596731186,
+                "a": 1.0
+            },
+            "TextColor": {
+                "r": 0.0,
+                "g": 0.0,
+                "b": 0.0,
+                "a": 1.0
+            }
+        }
+    ],
+    "Exclude": [
+        "bar"
+    ]
+}
