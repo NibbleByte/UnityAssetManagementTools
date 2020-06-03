@@ -115,18 +115,34 @@ namespace DevLocker.Tools.AssetsManagement
 
 		private GUIContent RemoveResultEntryContent = new GUIContent("X", "Remove result entry from the execution list.");
 		private const string CountersPattern = @"\d";
+		private readonly Color ErrorColor = new Color(0.801f, 0.472f, 0.472f);
 
 		[Serializable]
 		private class RenameData
 		{
 			public Object Target;
 			public string RenamedName;
+			public string RenamedPath;
 			public bool Changed = false;
+			public bool Conflict = false;
 
 			public RenameData(Object target, string renameTo)
 			{
 				Target = target;
 				RenamedName = renameTo;
+			}
+
+			// Refresh RenamedPath. This is done manually (not with setters / getters),
+			// so that fields remain serializable and survive reload assembly.
+			public void RefreshPath()
+			{
+				if (AssetDatabase.Contains(Target)) {
+					var assetPath = AssetDatabase.GetAssetPath(Target);
+					var assetFolder = assetPath.Substring(0, assetPath.LastIndexOf('/') + 1);
+					RenamedPath = assetFolder + RenamedName + Path.GetExtension(assetPath);
+				} else {
+					RenamedPath = string.Empty;
+				}
 			}
 		}
 
@@ -289,7 +305,19 @@ namespace DevLocker.Tools.AssetsManagement
 			EditorGUI.BeginDisabledGroup(_renameData.Count == 0);
 			{
 				if (GUILayout.Button("Execute Rename")) {
-					ExecuteRename();
+					bool agreed = true;
+
+					if (_renameData.Any(rd => rd.Conflict)) {
+						agreed = EditorUtility.DisplayDialog(
+							"File conflicts!",
+							"There are file name conflicts!\nFiles won't be renamed if another file with the same name exists.\nDo you want to proceed anyway?",
+							"Yes!", "No"
+							);
+					}
+
+					if (agreed) {
+						ExecuteRename();
+					}
 				}
 
 				if (GUILayout.Button("Clear", GUILayout.Width(45f))) {
@@ -507,10 +535,44 @@ namespace DevLocker.Tools.AssetsManagement
 
 				// If name did not match, show empty sting.
 				TryRename(renameData.Target.name, nextCounter, out renameData.RenamedName);
+				renameData.RefreshPath();
 
 				nextCounter += _counterStep;
 				if (_counterReset > 0 && nextCounter >= _counterReset) {
 					nextCounter = 0;
+				}
+			}
+
+			// Mark for conflicts after all names have been refreshed to check for conflicts between results as well.
+			foreach(var renameData in _renameData) {
+				MarkConflicts(renameData);
+			}
+		}
+
+		// Checks and marks RenameData if it conflicts with any other assets or entries from the results.
+		private void MarkConflicts(RenameData renameData)
+		{
+			renameData.Conflict = false;
+
+			// Check if file will conflict with this name.
+			if (!renameData.Target.name.Equals(renameData.RenamedName, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(renameData.RenamedPath)) {
+
+				if (!string.IsNullOrEmpty(AssetDatabase.AssetPathToGUID(renameData.RenamedPath))) {
+					renameData.Conflict = true;
+					return;
+				}
+
+				foreach(var otherData in _renameData) {
+					if (otherData == renameData)
+						continue;
+
+					if (renameData.RenamedPath == otherData.RenamedPath) {
+						renameData.Conflict = true;
+						otherData.Conflict = true;
+
+						// NOTE: this might not mark all available conflicts.
+						return;
+					}
 				}
 			}
 		}
@@ -534,12 +596,16 @@ namespace DevLocker.Tools.AssetsManagement
 					GUI.backgroundColor = Color.yellow;
 				}
 
-				if (data.Target && data.Target.name == data.RenamedName) {
+				if (data.Target && data.Target.name.Equals(data.RenamedName, StringComparison.Ordinal)) {
 					GUI.backgroundColor = new Color(0.305f, 0.792f, 0.470f);
 				}
 
+				if (data.Conflict) {
+					GUI.backgroundColor = ErrorColor;
+				}
+
 				if (string.IsNullOrEmpty(data.RenamedName)) {
-					GUI.backgroundColor = new Color(0.801f, 0.472f, 0.472f);
+					GUI.backgroundColor = ErrorColor;
 				}
 
 				EditorGUI.BeginChangeCheck();
@@ -547,6 +613,12 @@ namespace DevLocker.Tools.AssetsManagement
 
 				if (EditorGUI.EndChangeCheck()) {
 					data.Changed = true;
+					data.RefreshPath();
+
+					// Mark (or clear) any conflicts with other result entries.
+					foreach (var renameData in _renameData) {
+						MarkConflicts(renameData);
+					}
 				}
 
 				GUI.backgroundColor = prevBackground;
@@ -576,7 +648,16 @@ namespace DevLocker.Tools.AssetsManagement
 			}
 
 			var dropObjectsRect = EditorGUILayout.GetControlRect(GUILayout.Height(EditorGUIUtility.singleLineHeight * 1.5f));
-			GUI.Label(dropObjectsRect, "Drag and drop objects here to add to list!", DragDropZoneStyle);
+
+			if (_renameData.Any(rd => rd.Conflict)) {
+				// Draw here to keep Layout structure so typing doesn't get interrupted.
+				var prevColor = GUI.backgroundColor;
+				GUI.backgroundColor = ErrorColor;
+				GUI.Label(dropObjectsRect, "File name conflicts present!!!", DragDropZoneStyle);
+				GUI.backgroundColor = prevColor;
+			} else {
+				GUI.Label(dropObjectsRect, "Drag and drop objects here to add to list!", DragDropZoneStyle);
+			}
 
 			if (dropObjectsRect.Contains(Event.current.mousePosition)) {
 
@@ -628,6 +709,7 @@ namespace DevLocker.Tools.AssetsManagement
 				// Got deleted in the meantime?
 				if (data.Target == null) {
 					data.RenamedName = string.Empty;
+					data.RefreshPath();
 					continue;
 				}
 
@@ -641,6 +723,7 @@ namespace DevLocker.Tools.AssetsManagement
 					continue;
 
 				data.RenamedName = data.RenamedName.Trim();
+				data.RefreshPath();
 
 				if (AssetDatabase.Contains(data.Target)) {
 
@@ -657,7 +740,7 @@ namespace DevLocker.Tools.AssetsManagement
 
 						string error = AssetDatabase.RenameAsset(targetPath, data.RenamedName);
 						if (!string.IsNullOrEmpty(error)) {
-							Debug.LogError($"Could not rename asset: \"{targetPath}\" to \"{data.RenamedName}\".\nError: {error}.");
+							Debug.LogError($"Could not rename asset: \"{targetPath}\" to \"{data.RenamedName}\". Reason:\n{error}.", data.Target);
 							hasErrors = true;
 						} else {
 							builder.AppendLine($"{targetPath} => {data.RenamedName}");
