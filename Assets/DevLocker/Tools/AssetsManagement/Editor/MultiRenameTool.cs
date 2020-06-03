@@ -117,6 +117,8 @@ namespace DevLocker.Tools.AssetsManagement
 		private const string CountersPattern = @"\d";
 		private readonly Color ErrorColor = new Color(0.801f, 0.472f, 0.472f);
 
+		private static char[] InvalidFileNameChars = Path.GetInvalidFileNameChars();
+
 		[Serializable]
 		private class RenameData
 		{
@@ -134,9 +136,16 @@ namespace DevLocker.Tools.AssetsManagement
 
 			// Refresh RenamedPath. This is done manually (not with setters / getters),
 			// so that fields remain serializable and survive reload assembly.
-			public void RefreshPath()
+			public void RefreshNames()
 			{
 				if (AssetDatabase.Contains(Target)) {
+
+					for(int i = RenamedName.Length - 1; i >= 0; --i) {
+						if (Array.IndexOf(InvalidFileNameChars, RenamedName[i]) != -1) {
+							RenamedName = RenamedName.Remove(i, 1);
+						}
+					}
+
 					var assetPath = AssetDatabase.GetAssetPath(Target);
 					var assetFolder = assetPath.Substring(0, assetPath.LastIndexOf('/') + 1);
 					RenamedPath = assetFolder + RenamedName + Path.GetExtension(assetPath);
@@ -535,7 +544,7 @@ namespace DevLocker.Tools.AssetsManagement
 
 				// If name did not match, show empty sting.
 				TryRename(renameData.Target.name, nextCounter, out renameData.RenamedName);
-				renameData.RefreshPath();
+				renameData.RefreshNames();
 
 				nextCounter += _counterStep;
 				if (_counterReset > 0 && nextCounter >= _counterReset) {
@@ -613,7 +622,7 @@ namespace DevLocker.Tools.AssetsManagement
 
 				if (EditorGUI.EndChangeCheck()) {
 					data.Changed = true;
-					data.RefreshPath();
+					data.RefreshNames();
 
 					// Mark (or clear) any conflicts with other result entries.
 					foreach (var renameData in _renameData) {
@@ -709,7 +718,7 @@ namespace DevLocker.Tools.AssetsManagement
 				// Got deleted in the meantime?
 				if (data.Target == null) {
 					data.RenamedName = string.Empty;
-					data.RefreshPath();
+					data.RefreshNames();
 					continue;
 				}
 
@@ -723,7 +732,7 @@ namespace DevLocker.Tools.AssetsManagement
 					continue;
 
 				data.RenamedName = data.RenamedName.Trim();
-				data.RefreshPath();
+				data.RefreshNames();
 
 				if (AssetDatabase.Contains(data.Target)) {
 
