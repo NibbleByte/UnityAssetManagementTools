@@ -44,6 +44,27 @@ namespace DevLocker.Tools.AssetsManagement
 			if (GUI.Button(rect, "+", GUI.skin.label)) {
 				MultiRenameTool window = CreateInstance<MultiRenameTool>();
 				window.titleContent = titleContent;
+				window._searchObject = _searchObject;
+				window._editorLocked = _editorLocked;
+
+				window._searchPattern = _searchPattern;
+				window._searchPatternEnabled = _searchPatternEnabled;
+				window._replacePattern = _replacePattern;
+				window._replacePatternEnabled = _replacePatternEnabled;
+				window._prefix = _prefix;
+				window._suffix = _suffix;
+
+				window._folders = _folders;
+				window._recursiveModes = _recursiveModes;
+				window._transformMode = _transformMode;
+				window._caseSensitive = _caseSensitive;
+
+				window._useCounters = _useCounters;
+				window._startCounter = _startCounter;
+				window._counterStep = _counterStep;
+				window._counterReset = _counterReset;
+				window._counterLeadingZeroes = _counterLeadingZeroes;
+
 				window.Show();
 			}
 		}
@@ -78,11 +99,11 @@ namespace DevLocker.Tools.AssetsManagement
 		private string _prefix = string.Empty;
 		private string _suffix = string.Empty;
 		private bool _folders = true;
-		private RecursiveModes _recursiveModes = RecursiveModes.All;
+		private RecursiveModes _recursiveModes = RecursiveModes.Folders | RecursiveModes.SceneHierarchy;
 		private TransformModes _transformMode = TransformModes.TrimSpaces;
 		private bool _caseSensitive = true;
 
-		private bool _useCounters = false;
+		private bool _useCounters = true;
 		private int _startCounter = 0;
 		private int _counterStep = 1;
 		private int _counterReset = 0;
@@ -92,6 +113,7 @@ namespace DevLocker.Tools.AssetsManagement
 
 		private bool _showHelpAbout = false;
 
+		private GUIContent RemoveResultEntryContent = new GUIContent("X", "Remove result entry from the execution list.");
 		private const string CountersPattern = @"\d";
 
 		[Serializable]
@@ -203,7 +225,7 @@ namespace DevLocker.Tools.AssetsManagement
 
 			EditorGUILayout.EndHorizontal();
 
-			_useCounters = EditorGUILayout.Toggle("Use numbers:", _useCounters);
+			_useCounters = EditorGUILayout.Toggle("Use \"\\d\" numbers:", _useCounters);
 			if (_useCounters) {
 
 				EditorGUILayout.BeginHorizontal();
@@ -285,8 +307,6 @@ namespace DevLocker.Tools.AssetsManagement
 
 		private Object[] GetUnitySelection()
 		{
-			var searchObjects = new List<Object>();
-
 			// If scene game objects selected, just return that.
 			// This fails if user selects folders on the left pane in project two-column view.
 			if (!Selection.objects.All(AssetDatabase.Contains)) {	// All(empty) => true
@@ -531,7 +551,7 @@ namespace DevLocker.Tools.AssetsManagement
 
 				GUI.backgroundColor = prevBackground;
 
-				if (GUILayout.Button("X", GUILayout.Width(20.0f), GUILayout.Height(16.0f))) {
+				if (GUILayout.Button(RemoveResultEntryContent, GUILayout.Width(20.0f), GUILayout.Height(16.0f))) {
 					_renameData.RemoveAt(i);
 					i--;
 				}
@@ -736,34 +756,29 @@ namespace DevLocker.Tools.AssetsManagement
 		{
 			_helpAboutScrollPos = EditorGUILayout.BeginScrollView(_helpAboutScrollPos);
 
-			EditorGUILayout.LabelField("Help:", EditorStyles.boldLabel);
+			EditorGUILayout.LabelField("Pro Tips:", EditorStyles.boldLabel);
 
-			const string helpText =
-				"1. Type in search pattern.\n" +
-				"2. Type in replace pattern.\n" +
-				"3. Select folder or objects to search in.\n" +
-				"4. Press \"Search Selected\"\n" +
-				"5. Preview the results before executing.\n" +
-				"6. Modify results or query to your liking.\n" +
-				"  -> query changes will update results instantly.\n" +
-				"7. Press \"Execute Rename\".\n" +
-				"8. Check the logs for details.\n" +
-				"\n" +
-				"Alternatively, drag objects directly to the list of results.\n" +
-				"\n" +
+			const string tips =
 				"Pro Tip # 1:\n" +
+				"Modify results or query to your liking.\n" +
+				"Query changes will update results instantly.\n" +
+				"\n" +
+				"Pro Tip # 2:\n" +
 				"\"Use numbers\" will parse your search / replace patterns for numbers.\n" +
 				"Use \"\\d\" to indicate numbers in your pattern.\n" +
 				"\n" +
-				"Pro Tip # 2:\n" +
+				"Pro Tip # 3:\n" +
 				"Deactivate search pattern to match any names.\n" +
 				"Deactivate replace pattern to keep the original name.\n" +
 				"(useful with prefix / suffix)\n" +
 				"\n" +
-				"Pro Tip # 3:\n" +
-				"Works with assets and scene objects.";
+				"Pro Tip # 4:\n" +
+				"Works with assets and scene objects.\n" +
+				"\n" +
+				"Pro Tip # 5:\n" +
+				"Check logs after renaming has completed.";
 
-			EditorGUILayout.LabelField(helpText, EditorStyles.helpBox);
+			EditorGUILayout.LabelField(tips, EditorStyles.helpBox);
 			EditorGUILayout.EndScrollView();
 
 			EditorGUILayout.Space();
@@ -771,6 +786,15 @@ namespace DevLocker.Tools.AssetsManagement
 			EditorGUILayout.LabelField("About:", EditorStyles.boldLabel);
 
 			EditorGUILayout.LabelField("Created by Filip Slavov (NibbleByte)");
+
+			if (GUILayout.Button("Help / Documentation", GUILayout.MaxWidth(EditorGUIUtility.labelWidth))) {
+				var assets = AssetDatabase.FindAssets("MultiRenameTool-Documentation");
+				if (assets.Length == 0) {
+					EditorUtility.DisplayDialog("Documentation missing!", "The documentation you requested is missing.", "Ok");
+				} else {
+					Application.OpenURL(Environment.CurrentDirectory + "/" + AssetDatabase.GUIDToAssetPath(assets[0]));
+				}
+			}
 
 			if (GUILayout.Button("Plugin at Asset Store", GUILayout.MaxWidth(EditorGUIUtility.labelWidth))) {
 				EditorUtility.DisplayDialog("Under construction", "Asset Store plugin is coming really soon...", "Fine");
