@@ -104,7 +104,7 @@ namespace DevLocker.Tools.AssetsManagement
 		private bool _caseSensitive = true;
 
 		private bool _useCounters = true;
-		private int _startCounter = 0;
+		private int _startCounter = 1;
 		private int _counterStep = 1;
 		private int _counterReset = 0;
 		private int _counterLeadingZeroes = 1;
@@ -138,7 +138,7 @@ namespace DevLocker.Tools.AssetsManagement
 			// so that fields remain serializable and survive reload assembly.
 			public void RefreshNames()
 			{
-				if (AssetDatabase.Contains(Target)) {
+				if (AssetDatabase.Contains(Target) && !string.IsNullOrEmpty(RenamedName)) {
 
 					for(int i = RenamedName.Length - 1; i >= 0; --i) {
 						if (Array.IndexOf(InvalidFileNameChars, RenamedName[i]) != -1) {
