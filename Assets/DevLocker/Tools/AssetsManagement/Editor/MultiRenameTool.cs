@@ -877,7 +877,16 @@ namespace DevLocker.Tools.AssetsManagement
 
 			EditorGUILayout.LabelField("About:", EditorStyles.boldLabel);
 
-			EditorGUILayout.LabelField("Created by Filip Slavov (NibbleByte)");
+			var urlStyle = new GUIStyle(EditorStyles.label);
+			urlStyle.normal.textColor = EditorGUIUtility.isProSkin ? new Color(1.00f, 0.65f, 0.00f) : Color.blue;
+			urlStyle.active.textColor = Color.red;
+
+			const string mail = "NibbleByte3@gmail.com";
+
+			GUILayout.Label("Created by Filip Slavov", GUILayout.ExpandWidth(false));
+			if (GUILayout.Button(mail, urlStyle, GUILayout.ExpandWidth(false))) {
+				Application.OpenURL("mailto:" + mail);
+			}
 
 			if (GUILayout.Button("Help / Documentation", GUILayout.MaxWidth(EditorGUIUtility.labelWidth))) {
 				var assets = AssetDatabase.FindAssets("MultiRenameTool-Documentation");
@@ -889,7 +898,8 @@ namespace DevLocker.Tools.AssetsManagement
 			}
 
 			if (GUILayout.Button("Plugin at Asset Store", GUILayout.MaxWidth(EditorGUIUtility.labelWidth))) {
-				EditorUtility.DisplayDialog("Under construction", "Asset Store plugin is coming really soon...", "Fine");
+				var githubURL = "https://assetstore.unity.com/packages/tools/utilities/multi-rename-tool-170616";
+				Application.OpenURL(githubURL);
 			}
 
 			if (GUILayout.Button("Source at GitHub", GUILayout.MaxWidth(EditorGUIUtility.labelWidth))) {
