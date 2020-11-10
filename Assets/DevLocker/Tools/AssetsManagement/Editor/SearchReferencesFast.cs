@@ -14,7 +14,7 @@ namespace DevLocker.Tools.AssetsManagement
 {
 
 	/// <summary>
-	/// Tool for searching references FAST. 
+	/// Tool for searching references FAST.
 	/// Search is done by text (instead of loading all the assets) and works only with text assets set in unity.
 	/// Created by Filip Slavov to serve the mighty Vesselin Jilov at Snapshot Games.
 	/// </summary>
@@ -41,6 +41,7 @@ namespace DevLocker.Tools.AssetsManagement
 				window.Show();
 
 				window._searchText = _searchText;
+				window._searchMainAssetOnly = _searchMainAssetOnly;
 				window._textToSearch = _textToSearch;
 
 				window._searchMetas = _searchMetas;
@@ -54,6 +55,7 @@ namespace DevLocker.Tools.AssetsManagement
 		private const string PROJECT_EXCLUDES_PATH = "ProjectSettings/SearchReferencesFast.Exclude.txt";
 
 		private bool _searchText = false;
+		private bool _searchMainAssetOnly = false;
 		private string _textToSearch;
 
 
@@ -125,10 +127,20 @@ namespace DevLocker.Tools.AssetsManagement
 
 			EditorGUILayout.Space();
 
-			_searchText = EditorGUILayout.Toggle("Search Text", _searchText);
+			EditorGUILayout.BeginHorizontal();
+			_searchText = EditorGUILayout.Toggle("Search Text", _searchText, GUILayout.ExpandWidth(false));
+
+			if (!_searchText) {
+				GUILayout.FlexibleSpace();
+				var label = new GUIContent("Main Asset GUID Only", "If enabled search will match just the asset GUID instead of GUID + LocalId (used for sub assets).");
+				_searchMainAssetOnly = EditorGUILayout.Toggle(label, _searchMainAssetOnly);
+			}
+			EditorGUILayout.EndHorizontal();
+
 			if (_searchText) {
 				_textToSearch = EditorGUILayout.TextField("Text", _textToSearch);
 			} else {
+
 				EditorGUI.BeginDisabledGroup(true);
 				if (Selection.objects.Length <= 1) {
 					EditorGUILayout.TextField("Selected Object", Selection.activeObject ? Selection.activeObject.name : "null");
@@ -307,7 +319,7 @@ namespace DevLocker.Tools.AssetsManagement
 						if (foundGuidsCache.Contains(searchData.Target))
 							continue;
 
-						var matchFound = LineMatchesSearch(searchData, line, searchPath);
+						var matchFound = LineMatchesSearch(searchData, line, searchPath, _searchMainAssetOnly);
 
 						if (matchFound) {
 
@@ -351,9 +363,9 @@ namespace DevLocker.Tools.AssetsManagement
 			EditorUtility.ClearProgressBar();
 		}
 
-		private static bool LineMatchesSearch(SearchEntryData searchData, string line, string searchPath)
+		private static bool LineMatchesSearch(SearchEntryData searchData, string line, string searchPath, bool matchGuidOnly)
 		{
-			var matchFound = line.Contains(searchData.Guid) && (string.IsNullOrEmpty(searchData.LocalId) || line.Contains(searchData.LocalId));
+			var matchFound = line.Contains(searchData.Guid) && (matchGuidOnly || string.IsNullOrEmpty(searchData.LocalId) || line.Contains(searchData.LocalId));
 
 			// Embedded asset searching for references in the same main asset file.
 			if (searchData.IsSubAsset && searchData.MainAssetPath == searchPath) {
@@ -369,20 +381,20 @@ namespace DevLocker.Tools.AssetsManagement
 
 			var lines = File.ReadLines(searchPath);
 			foreach (var line in lines) {
-				if (LineMatchesSearch(searchData, line, searchPath))
+				if (LineMatchesSearch(searchData, line, searchPath, false))
 					return true;
 			}
 
 			return false;
 		}
-		
+
 		public static bool PerformSingleSearch(IEnumerable<Object> assets, string searchPath)
 		{
 			var searchDatas = assets.Select(a => new SearchEntryData(a)).ToList();
 			var lines = File.ReadLines(searchPath);
-			
+
 			foreach (var line in lines) {
-				if (searchDatas.Any(sd => LineMatchesSearch(sd, line, searchPath)))
+				if (searchDatas.Any(sd => LineMatchesSearch(sd, line, searchPath, false)))
 					return true;
 			}
 
@@ -492,7 +504,7 @@ namespace DevLocker.Tools.AssetsManagement
 			for(int resultIndex = 0; resultIndex < _results.Data.Count; ++resultIndex) {
 				var data = _results.Data[resultIndex].Value;
 
-				if (!string.IsNullOrEmpty(_resultsSearchEntryFilter) 
+				if (!string.IsNullOrEmpty(_resultsSearchEntryFilter)
 					&& (data.Root == null || data.Root.name.IndexOf(_resultsSearchEntryFilter, StringComparison.OrdinalIgnoreCase) == -1))
 					continue;
 
@@ -515,7 +527,7 @@ namespace DevLocker.Tools.AssetsManagement
 					for (int i = 0; i < data.Found.Count; ++i) {
 						var found = data.Found[i];
 
-						if (!string.IsNullOrEmpty(_resultsFoundEntryFilter) 
+						if (!string.IsNullOrEmpty(_resultsFoundEntryFilter)
 							&& (found == null || found.name.IndexOf(_resultsFoundEntryFilter, StringComparison.OrdinalIgnoreCase) == -1))
 							continue;
 
@@ -534,7 +546,7 @@ namespace DevLocker.Tools.AssetsManagement
 				}
 
 				DrawReplaceSinglePrefabs(data);
-				
+
 			}
 
 
@@ -566,7 +578,7 @@ namespace DevLocker.Tools.AssetsManagement
 						if (!EditorUtility.DisplayDialog(
 							"Delete Prefab Instances",
 							"Delete all instances of the prefab in the scenes in the list?",
-							"Yes", "No")) 
+							"Yes", "No"))
 						{
 							return;
 						}
@@ -581,7 +593,7 @@ namespace DevLocker.Tools.AssetsManagement
 					}
 
 					bool reparentChildren = false;
-					
+
 					if (data.ReplacePrefab != null) {
 						var option = EditorUtility.DisplayDialogComplex("Reparent objects?",
 							"If prefab has other game objects attached to its children, what should I do with them?",
@@ -596,7 +608,7 @@ namespace DevLocker.Tools.AssetsManagement
 					}
 
 					StringBuilder replaceReport = new StringBuilder(300);
-					
+
 					if (data.ReplacePrefab != null) {
 						replaceReport.AppendLine($"Search For: {data.Root.name}; Replace With: {data.ReplacePrefab.name}; Reparent: {reparentChildren}");
 					} else {
@@ -639,9 +651,9 @@ namespace DevLocker.Tools.AssetsManagement
 				StringBuilder replaceReport = new StringBuilder(300);
 				replaceReport.AppendLine($"Mass replace started! Reparent: {option == 0}");
 				ReplaceAllPrefabResults(_results, option == 0, replaceReport);
-				
+
 				Debug.Log($"Replace report:\n" + replaceReport);
-			} 
+			}
 			EditorGUI.EndDisabledGroup();
 		}
 
@@ -732,7 +744,7 @@ namespace DevLocker.Tools.AssetsManagement
 			ReplacePrefabResultsInScenes(scenes, resultDataToReplace, reparentChildren, replaceReport);
 		}
 
-		
+
 		// Replace one prefab in many scenes or many prefabs in many scenes.
 		private void ReplacePrefabResultsInScenes(List<SceneAsset> scenes, List<SearchResultData> resultDataToReplace, bool reparentChildren, StringBuilder replaceReport)
 		{
@@ -766,10 +778,10 @@ namespace DevLocker.Tools.AssetsManagement
 						// If the found prefab matches any of the requested (only prefab roots).
 						var data = resultDataToReplace.FirstOrDefault(d => d.Root == foundPrefab);
 						if (data != null) {
-							
+
 							// Store sibling index before reparenting children.
 							int nextSiblingIndex = transform.GetSiblingIndex() + 1;
-							
+
 							if (reparentChildren) {
 								var reparented = new List<GameObject>();
 								ReparentForeignObjects(go, transform.parent, transform, reparented);
@@ -778,7 +790,7 @@ namespace DevLocker.Tools.AssetsManagement
 									replaceReport.AppendLine($"> Re-parented: {string.Join(",", reparented.Select(g => g.name))}");
 								}
 							}
-							
+
 							if (data.ReplacePrefab != null) {
 								replaceReport.AppendLine($"Scene: {sceneAsset.name}; Replaced: {GetGameObjectPath(go)};");
 
@@ -792,7 +804,7 @@ namespace DevLocker.Tools.AssetsManagement
 							} else {
 								replaceReport.AppendLine($"Scene: {sceneAsset.name}; Deleted: {GetGameObjectPath(go)};");
 							}
-							
+
 							DestroyImmediate(go);
 						}
 					}
@@ -811,7 +823,7 @@ namespace DevLocker.Tools.AssetsManagement
 			EditorUtility.DisplayDialog("Complete", "Prefabs were replaced. Please check the replace report in the logs.", "I will!");
 		}
 
-		
+
 
 		private string GetGameObjectPath(GameObject go)
 		{
@@ -854,16 +866,16 @@ namespace DevLocker.Tools.AssetsManagement
 			EditorGUILayout.LabelField("Preferences:", EditorStyles.boldLabel);
 
 			m_PreferencesScroll = EditorGUILayout.BeginScrollView(m_PreferencesScroll, GUILayout.ExpandHeight(false));
-			
+
 			var so = new SerializedObject(this);
 			var sp = so.FindProperty("_searchFilter").FindPropertyRelative("ExcludePreferences");
-			
+
 			EditorGUILayout.PropertyField(sp, new GUIContent("Exclude paths or file names for this project:"), true);
-			
+
 			so.ApplyModifiedProperties();
-			
+
 			EditorGUILayout.EndScrollView();
-			
+
 			if (GUILayout.Button("Done", GUILayout.ExpandWidth(false))) {
 				_searchFilter.ExcludePreferences.RemoveAll(string.IsNullOrWhiteSpace);
 
