@@ -232,7 +232,7 @@ namespace DevLocker.Tools.AssetsManagement
 		private const string SettingsPathScenes = "Library/ScenesInProject.Scenes.txt";
 		private const string SettingsPathPinnedScenes = "Library/ScenesInProject.PinnedScenes.txt";
 
-		[MenuItem("Tools/Assets Management/Scenes In Project")]
+		[MenuItem("Tools/Assets Management/Scenes In Project", false, 68)]
 		private static void Init()
 		{
 			var window = (ScenesInProject)GetWindow(typeof(ScenesInProject), false, "Scenes In Project");
