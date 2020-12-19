@@ -1,4 +1,4 @@
-# Assets Management Tools for Unity
+# Asset Management Tools for Unity
 Small collection of tools for Unity used to manage your assets. Part of the [DevLocker](https://github.com/NibbleByte/DevLocker) project.
 
 ## List of Tools
@@ -13,7 +13,7 @@ Small collection of tools for Unity used to manage your assets. Part of the [Dev
 ```
 {
   "dependencies": {
-    "devlocker.tools.assetsmanagement": "https://github.com/NibbleByte/UnityAssetManagementTools.git#upm"
+    "devlocker.tools.assetmanagement": "https://github.com/NibbleByte/UnityAssetManagementTools.git#upm"
 }
 ```
 * Asset Store plugin: 
