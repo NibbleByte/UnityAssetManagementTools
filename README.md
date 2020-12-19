@@ -13,7 +13,7 @@ Small collection of tools for Unity used to manage your assets. Part of the [Dev
 ```
 {
   "dependencies": {
-    "devlocker.tools.assetsmanagement": "https://github.com/NibbleByte/AssetsManagementTools.git#upm"
+    "devlocker.tools.assetsmanagement": "https://github.com/NibbleByte/UnityAssetManagementTools.git#upm"
 }
 ```
 * Asset Store plugin: 
@@ -21,7 +21,7 @@ Small collection of tools for Unity used to manage your assets. Part of the [Dev
   * MultiRename Tool - ... coming soon ...
 
 ## Usage
-All these tools can be found in the menus: "Tools/Assets Management/..."
+All these tools can be found in the menus: "Tools/Asset Management/..."
 
 ## Scenes In Project
 <img src="Docs/Screenshots/ScenesInProject.png" align="right">
