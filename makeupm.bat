@@ -1,2 +1,2 @@
-git subtree push --prefix Assets/DevLocker/Tools/AssetsManagement origin upm
+git subtree push --prefix Assets/DevLocker/Tools/AssetManagement origin upm
 pause
