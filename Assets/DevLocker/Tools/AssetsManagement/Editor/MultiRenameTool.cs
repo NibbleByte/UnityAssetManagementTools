@@ -17,7 +17,7 @@ namespace DevLocker.Tools.AssetsManagement
 	/// </summary>
 	public class MultiRenameTool : EditorWindow
 	{
-		[MenuItem("Tools/Assets Management/Multi-Rename Tool", false, 65)]
+		[MenuItem("Tools/Asset Management/Multi-Rename Tool", false, 65)]
 		static void Init()
 
 		{

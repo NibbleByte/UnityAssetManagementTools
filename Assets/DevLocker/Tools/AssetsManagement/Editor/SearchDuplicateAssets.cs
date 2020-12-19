@@ -14,7 +14,7 @@ namespace DevLocker.Tools.AssetsManagement
 	/// </summary>
 	public class SearchDuplicateAssets : EditorWindow
 	{
-		[MenuItem("Tools/Assets Management/Search Duplicate Assets", false, 60)]
+		[MenuItem("Tools/Asset Management/Search Duplicate Assets", false, 60)]
 		static void Init()
 		{
 			var window = GetWindow<SearchDuplicateAssets>("Search Duplicate Assets");

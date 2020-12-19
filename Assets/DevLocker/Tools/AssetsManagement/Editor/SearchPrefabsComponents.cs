@@ -14,7 +14,7 @@ namespace DevLocker.Tools.AssetsManagement
 	/// </summary>
 	public class SearchPrefabsComponents : EditorWindow
 	{
-		[MenuItem("Tools/Assets Management/Search Prefabs Components", false, 60)]
+		[MenuItem("Tools/Asset Management/Search Prefabs Components", false, 60)]
 		static void Init()
 		{
 			GetWindow<SearchPrefabsComponents>("Search Prefabs Components");

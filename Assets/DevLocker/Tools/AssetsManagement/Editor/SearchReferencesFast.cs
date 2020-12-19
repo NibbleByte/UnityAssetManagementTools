@@ -20,7 +20,7 @@ namespace DevLocker.Tools.AssetsManagement
 	/// </summary>
 	public class SearchReferencesFast : EditorWindow
 	{
-		[MenuItem("Tools/Assets Management/Search References (FAST)", false, 61)]
+		[MenuItem("Tools/Asset Management/Search References (FAST)", false, 61)]
 		static void Init()
 		{
 			var window = GetWindow<SearchReferencesFast>("Search References");

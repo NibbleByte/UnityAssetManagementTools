@@ -16,7 +16,7 @@ namespace DevLocker.Tools.AssetsManagement
 	/// + pin favourites
 	/// + colorize scenes based on file name or path
 	///
-	/// Find it at "Tools / Assets Management / Scenes In Project" menu.
+	/// Find it at "Tools / Asset Management / Scenes In Project" menu.
 	///
 	/// Initial version of the script: http://wiki.unity3d.com/index.php/SceneViewWindow by Kevin Tarchenski.
 	/// Advanced (this) version by Filip Slavov (a.k.a. NibbleByte) - NibbleByte3@gmail.com.
@@ -232,7 +232,7 @@ namespace DevLocker.Tools.AssetsManagement
 		private const string SettingsPathScenes = "Library/ScenesInProject.Scenes.txt";
 		private const string SettingsPathPinnedScenes = "Library/ScenesInProject.PinnedScenes.txt";
 
-		[MenuItem("Tools/Assets Management/Scenes In Project", false, 68)]
+		[MenuItem("Tools/Asset Management/Scenes In Project", false, 68)]
 		private static void Init()
 		{
 			var window = (ScenesInProject)GetWindow(typeof(ScenesInProject), false, "Scenes In Project");
