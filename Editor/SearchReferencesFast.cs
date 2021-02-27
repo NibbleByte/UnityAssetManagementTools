@@ -86,6 +86,7 @@ namespace DevLocker.Tools.AssetManagement
 				"NOTE2: Searching for foreign assets (example: meshes/materials/clips in fbx) is supported."
 			;
 
+		private SerializedObject m_SerializedObject;
 
 		void OnEnable()
 		{
@@ -95,6 +96,15 @@ namespace DevLocker.Tools.AssetManagement
 				_searchFilter.ExcludePreferences = new List<string>(File.ReadAllLines(PROJECT_EXCLUDES_PATH));
 			} else {
 				_searchFilter.ExcludePreferences = new List<string>();
+			}
+
+			m_SerializedObject = new SerializedObject(this);
+		}
+
+		private void OnDisable()
+		{
+			if (m_SerializedObject != null) {
+				m_SerializedObject.Dispose();
 			}
 		}
 
@@ -115,12 +125,15 @@ namespace DevLocker.Tools.AssetManagement
 
 		void OnGUI()
 		{
+			m_SerializedObject.Update();
+
 			if (BOLDED_FOLDOUT_STYLE == null) {
 				InitStyles();
 			}
 
 			if (m_ShowPreferences) {
 				DrawPreferences();
+				m_SerializedObject.ApplyModifiedProperties();
 				return;
 			}
 
@@ -210,6 +223,8 @@ namespace DevLocker.Tools.AssetManagement
 			EditorGUILayout.EndHorizontal();
 
 			DrawResults();
+
+			m_SerializedObject.ApplyModifiedProperties();
 		}
 
 		private void PerformSearch(Object[] targets)
@@ -867,12 +882,9 @@ namespace DevLocker.Tools.AssetManagement
 
 			m_PreferencesScroll = EditorGUILayout.BeginScrollView(m_PreferencesScroll, GUILayout.ExpandHeight(false));
 
-			var so = new SerializedObject(this);
-			var sp = so.FindProperty("_searchFilter").FindPropertyRelative("ExcludePreferences");
+			var sp = m_SerializedObject.FindProperty("_searchFilter").FindPropertyRelative("ExcludePreferences");
 
 			EditorGUILayout.PropertyField(sp, new GUIContent("Exclude paths or file names for this project:"), true);
-
-			so.ApplyModifiedProperties();
 
 			EditorGUILayout.EndScrollView();
 
