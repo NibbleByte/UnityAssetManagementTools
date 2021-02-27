@@ -225,6 +225,8 @@ namespace DevLocker.Tools.AssetManagement
 		[NonSerialized]
 		private SceneEntry m_DraggedEntity;
 
+		private SerializedObject m_SerializedObject;
+
 		private bool m_ShowPreferences = false;
 		private const string PERSONAL_PREFERENCES_PATH = "Library/ScenesInProject.prefs";
 		private const string PROJECT_PREFERENCES_PATH = "ProjectSettings/ScenesInProject.prefs";
@@ -525,6 +527,8 @@ namespace DevLocker.Tools.AssetManagement
 		private void OnEnable()
 		{
 			m_Instances.Add(this);
+
+			m_SerializedObject = new SerializedObject(this);
 		}
 
 		private void OnDisable()
@@ -533,6 +537,10 @@ namespace DevLocker.Tools.AssetManagement
 
 			if (m_Initialized) {
 				StoreAllScenes();
+			}
+
+			if (m_SerializedObject != null) {
+				m_SerializedObject.Dispose();
 			}
 		}
 
@@ -691,6 +699,8 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void OnGUI()
 		{
+			m_SerializedObject.Update();
+
 			// Initialize on demand (not on OnEnable), to make sure everything is up and running.
 			if (!m_Initialized || AssetsChanged) {
 				if (!m_Initialized) {
@@ -710,6 +720,7 @@ namespace DevLocker.Tools.AssetManagement
 
 			if (m_ShowPreferences) {
 				DrawPreferences();
+				m_SerializedObject.ApplyModifiedProperties();
 				return;
 			}
 
@@ -720,6 +731,8 @@ namespace DevLocker.Tools.AssetManagement
 			DrawSceneLists(openFirstResult, filterWords);
 
 			HandleScenesDrag();
+
+			m_SerializedObject.ApplyModifiedProperties();
 		}
 
 		private void DrawControls(out bool openFirstResult, out string[] filterWords)
@@ -1542,12 +1555,9 @@ namespace DevLocker.Tools.AssetManagement
 			if (m_PersonalPrefs.SceneDisplay == SceneDisplay.SceneFullPathsOmitFolders) {
 				EditorGUI.indentLevel++;
 
-				var so = new SerializedObject(this);
-				var sp = so.FindProperty("m_PersonalPrefs").FindPropertyRelative("DisplayRemoveFolders");
+				var sp = m_SerializedObject.FindProperty("m_PersonalPrefs").FindPropertyRelative("DisplayRemoveFolders");
 
 				EditorGUILayout.PropertyField(sp, new GUIContent("Omit folders", "List of folders that will be removed from the displayed path. Example: Remove \"Assets\" folder from the path."), true);
-
-				so.ApplyModifiedProperties();
 
 				EditorGUI.indentLevel--;
 			}
@@ -1564,13 +1574,10 @@ namespace DevLocker.Tools.AssetManagement
 
 			// Colorize Patterns
 			{
-				var so = new SerializedObject(this);
-				var sp = so.FindProperty("m_PersonalPrefs");
+				var sp = m_SerializedObject.FindProperty("m_PersonalPrefs");
 
 				EditorGUILayout.PropertyField(sp.FindPropertyRelative("ColorizePatterns"), PreferencesColorizePatternsLabelContent, true);
 				EditorGUILayout.PropertyField(sp.FindPropertyRelative("Exclude"), PreferencesExcludePatternsLabelContent, true);
-
-				so.ApplyModifiedProperties();
 
 
 				foreach (var cf in m_PersonalPrefs.ColorizePatterns) {
@@ -1586,13 +1593,10 @@ namespace DevLocker.Tools.AssetManagement
 		{
 			EditorGUILayout.HelpBox("These settings will be saved in the ProjectSettings folder.\nFeel free to add them to your version control system.\nCoordinate any changes here with your team.", MessageType.Warning);
 
-			var so = new SerializedObject(this);
-			var sp = so.FindProperty("m_ProjectPrefs");
+			var sp = m_SerializedObject.FindProperty("m_ProjectPrefs");
 
 			EditorGUILayout.PropertyField(sp.FindPropertyRelative("ColorizePatterns"), PreferencesColorizePatternsLabelContent, true);
 			EditorGUILayout.PropertyField(sp.FindPropertyRelative("Exclude"), PreferencesExcludePatternsLabelContent, true);
-
-			so.ApplyModifiedProperties();
 
 
 			foreach (var cf in m_ProjectPrefs.ColorizePatterns) {
