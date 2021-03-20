@@ -128,6 +128,7 @@ namespace DevLocker.Tools.AssetManagement
 			public Object Target;
 			public string RenamedName;
 			public string RenamedPath;
+			public bool IsSubAsset;
 			public bool Changed = false;
 			public bool Conflict = false;
 
@@ -149,9 +150,17 @@ namespace DevLocker.Tools.AssetManagement
 						}
 					}
 
-					var assetPath = AssetDatabase.GetAssetPath(Target);
-					var assetFolder = assetPath.Substring(0, assetPath.LastIndexOf('/') + 1);
-					RenamedPath = assetFolder + RenamedName + Path.GetExtension(assetPath);
+					if (AssetDatabase.IsSubAsset(Target)) {
+						RenamedPath = AssetDatabase.GetAssetPath(Target) + "/" + RenamedName;
+						IsSubAsset = true;
+
+					} else {
+						var assetPath = AssetDatabase.GetAssetPath(Target);
+						var assetFolder = assetPath.Substring(0, assetPath.LastIndexOf('/') + 1);
+						RenamedPath = assetFolder + RenamedName + Path.GetExtension(assetPath);
+						IsSubAsset = false;
+					}
+
 				} else {
 					RenamedPath = string.Empty;
 				}
@@ -317,6 +326,7 @@ namespace DevLocker.Tools.AssetManagement
 					}
 
 					PerformSearch(searchObjects);
+					RefreshRenameData();
 				}
 
 				if (GUILayout.Button("Help", GUILayout.Width(45f))) {
@@ -586,10 +596,14 @@ namespace DevLocker.Tools.AssetManagement
 		{
 			renameData.Conflict = false;
 
+			if (renameData.Target == null)
+				return;
+
 			// Check if file will conflict with this name.
 			if (!renameData.Target.name.Equals(renameData.RenamedName, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(renameData.RenamedPath)) {
 
-				if (!string.IsNullOrEmpty(AssetDatabase.AssetPathToGUID(renameData.RenamedPath))) {
+				// If not a sub asset, check if another asset is occupying the same path.
+				if (!renameData.IsSubAsset && !string.IsNullOrEmpty(AssetDatabase.AssetPathToGUID(renameData.RenamedPath))) {
 					renameData.Conflict = true;
 					return;
 				}
@@ -715,6 +729,8 @@ namespace DevLocker.Tools.AssetManagement
 		{
 			bool hasErrors = false;
 			bool assetsChanged = false;
+
+			_renameData.RemoveAll(rd => rd.Target == null);
 
 			var builder = new StringBuilder();
 			builder.AppendLine("Rename results:");
