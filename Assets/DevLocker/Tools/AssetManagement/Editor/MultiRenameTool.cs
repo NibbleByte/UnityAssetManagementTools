@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 using UnityEditor;
@@ -76,7 +77,7 @@ namespace DevLocker.Tools.AssetManagement
 
 			Folders = 1 << 0,
 			SceneHierarchy = 1 << 1,
-			SubAssets = 1 << 2,
+			SubAssetsAndSprites = 1 << 2,
 
 			All = ~0,
 		}
@@ -99,7 +100,7 @@ namespace DevLocker.Tools.AssetManagement
 		private string _prefix = string.Empty;
 		private string _suffix = string.Empty;
 		private bool _folders = true;
-		private RecursiveModes _recursiveModes = RecursiveModes.Folders | RecursiveModes.SceneHierarchy;
+		private RecursiveModes _recursiveModes = RecursiveModes.All;
 		private TransformModes _transformMode = TransformModes.TrimSpaces;
 		private bool _caseSensitive = true;
 
@@ -325,7 +326,15 @@ namespace DevLocker.Tools.AssetManagement
 					}
 
 					if (agreed) {
-						ExecuteRename();
+
+						try {
+							AssetDatabase.StartAssetEditing();
+							ExecuteRename();
+						}
+						finally {
+							AssetDatabase.StopAssetEditing();
+							EditorUtility.ClearProgressBar();
+						}
 					}
 				}
 
@@ -392,11 +401,11 @@ namespace DevLocker.Tools.AssetManagement
 				}
 
 				if ((_recursiveModes & RecursiveModes.Folders) != 0) {
-					var includeSubAssets = (_recursiveModes & RecursiveModes.SubAssets) != 0;
+					var includeSubAssets = (_recursiveModes & RecursiveModes.SubAssetsAndSprites) != 0;
 					TryAppendFolderAssets(target, allTargets, includeSubAssets);
 				}
 
-				if ((_recursiveModes & RecursiveModes.SubAssets) != 0) {
+				if ((_recursiveModes & RecursiveModes.SubAssetsAndSprites) != 0) {
 					TryAppendSubAssets(target, allTargets);
 				}
 
@@ -696,6 +705,9 @@ namespace DevLocker.Tools.AssetManagement
 			var builder = new StringBuilder();
 			builder.AppendLine("Rename results:");
 
+			// Dictionary<TexturePath, KeyValuePair<OldNames, NewNames>>
+			var spritesToRename = new Dictionary<string, KeyValuePair<List<string>, List<string>>>();
+
 			// Collect original paths of GameObjects in the scenes, before actually changing them.
 			var sceneObjectPaths = new Dictionary<Object, string>();
 			foreach(var data in _renameData) {
@@ -738,10 +750,27 @@ namespace DevLocker.Tools.AssetManagement
 
 					if (AssetDatabase.IsSubAsset(data.Target)) {
 
-						builder.AppendLine($"{AssetDatabase.GetAssetPath(data.Target)} - {data.Target.name} => {data.RenamedName}");
-						data.Target.name = data.RenamedName;
-						EditorUtility.SetDirty(data.Target);
-						assetsChanged = true;
+						// Sprites are special.
+						if (data.Target is Sprite) {
+							var texturePath = AssetDatabase.GetAssetPath(data.Target);
+
+							KeyValuePair<List<string>, List<string>> spriteNames;
+							if (!spritesToRename.TryGetValue(texturePath, out spriteNames)) {
+								spriteNames = new KeyValuePair<List<string>, List<string>>(new List<string>(), new List<string>());
+								spritesToRename.Add(texturePath, spriteNames);
+							}
+
+							spriteNames.Key.Add(data.Target.name);
+							spriteNames.Value.Add(data.RenamedName);
+
+						} else {
+
+							builder.AppendLine($"{AssetDatabase.GetAssetPath(data.Target)} - {data.Target.name} => {data.RenamedName}");
+							data.Target.name = data.RenamedName;
+							EditorUtility.SetDirty(data.Target);
+							assetsChanged = true;
+						}
+
 
 					} else {
 
@@ -770,6 +799,16 @@ namespace DevLocker.Tools.AssetManagement
 				}
 			}
 
+			if (spritesToRename.Count > 0) {
+				bool success = RenameSprites(spritesToRename, builder);
+				if (success) {
+					EditorUtility.DisplayDialog("Sprites Renamed!", "Sprites have been renamed successfully!\nPlease note that this may break references in rare cases if they were stored by name, not LocalId.", "Ok");
+				} else {
+					EditorUtility.DisplayDialog("Sprites Rename Failed!", "Sprites couldn't be renamed because are magical and Unity internal API has changed.\nContact the developers to fix this.", "Sad.");
+				}
+			}
+
+
 			Debug.Log(builder.ToString());
 
 			EditorUtility.ClearProgressBar();
@@ -780,7 +819,98 @@ namespace DevLocker.Tools.AssetManagement
 
 			if (hasErrors) {
 				EditorUtility.DisplayDialog("Error", "Something bad happened while executing the operation. Check the error logs.", "I Will!");
+			} else {
+				ShowNotification(new GUIContent("Rename finished!\nCheck the logs."));
 			}
+		}
+
+		private bool RenameSprites(Dictionary<string, KeyValuePair<List<string>, List<string>>> spritesToRename, StringBuilder builder)
+		{
+			// Renaming sprites is tricky, as they are fake sub-objects stored in the Texture meta file.
+			// Simple implementation will go and replace the names in the TextureImporter.spritesheet list,
+			// but that doesn't reuse the old LocalId / FileId - it just creates new entries.
+			// - In Unity 2018 this is the "fileIDToRecycleName" list.
+			// - In Unity 2019+ this is the "internalIDToNameTable" list.
+			//
+			// There are two approaches to this problem:
+			// - Parse the meta file manually and replace the names - similar to what edwardrowe has done here:
+			//		https://answers.unity.com/questions/1015984/how-to-rename-sprite-slices-in-script-without-brea.html
+			// - Call Unity internal methods via reflection and SerializedObject() emulating their implementation.
+			//		Since the Unity managed source code is open source, this is not that hard.
+			//
+			// We are doing the second approach.
+
+
+
+			// This is the Unity 2018 implementation, which reuses the ids of fileIDToRecycleName:
+			// Patches multiple entries at once to avoid situations where swapping names of two entries would break references
+			// public static void PatchMultiple(SerializedObject serializedObject, int classID, string[] oldNames, string[] newNames)
+			var PatchRecycleType = Assembly.GetAssembly(typeof(SerializedObject)).GetType("PatchImportSettingRecycleID");
+			var renameMulipleMethod = PatchRecycleType?.GetMethod("PatchMultiple", BindingFlags.Static | BindingFlags.Public);
+			object spriteType = 213;
+
+			if (renameMulipleMethod == null) {
+				// This is the Unity 2019 implementation, which reuses the ids of internalIDToNameTable:
+				// Rename multiple entries at once to avoid situations where swapping names of two entries would break references
+				// public static void RenameMultiple(SerializedObject serializedObject, UnityType type, string[] oldNames, string[] newNames)
+				var ImportSettingInternalIDType = Assembly.GetAssembly(typeof(SerializedObject)).GetType("ImportSettingInternalID");
+				renameMulipleMethod = ImportSettingInternalIDType?.GetMethod("RenameMultiple", BindingFlags.Static | BindingFlags.Public);
+
+				// public static UnityType FindTypeByName(string name)
+				var UnityTypeType = Assembly.GetAssembly(typeof(SerializedObject)).GetType("UnityEditor.UnityType");
+				var findTypeMethodInfo = UnityTypeType?.GetMethod("FindTypeByName", BindingFlags.Static | BindingFlags.Public);
+
+				if (renameMulipleMethod == null || findTypeMethodInfo == null)
+					return false;
+
+				spriteType = findTypeMethodInfo.Invoke(null, new object[] { "Sprite" });
+			}
+
+
+			var spritesToRenameList = spritesToRename.ToList();
+
+			for(int i = 0; i < spritesToRenameList.Count; ++i) {
+				var pair = spritesToRenameList[i];
+
+				if (EditorUtility.DisplayCancelableProgressBar("Renaming Sprites...", $"{pair.Key}", (float)i / spritesToRenameList.Count))
+					break;
+
+				var so = new SerializedObject(AssetImporter.GetAtPath(pair.Key));
+				var spriteNames = pair.Value;
+
+				renameMulipleMethod.Invoke(null, new object[] { so, spriteType, spriteNames.Key.ToArray(), spriteNames.Value.ToArray() });
+
+				var spriteSheetProperty = so.FindProperty("m_SpriteSheet.m_Sprites");
+				if (spriteSheetProperty == null)
+					return false;
+
+				for(int elementIndex = 0; elementIndex < spriteSheetProperty.arraySize; ++elementIndex) {
+					var element = spriteSheetProperty.GetArrayElementAtIndex(elementIndex);
+					var nameProperty = element.FindPropertyRelative("m_Name");
+					if (nameProperty == null)
+						return false;
+
+					var foundIndex = spriteNames.Key.IndexOf(nameProperty.stringValue);
+					if (foundIndex != -1) {
+						nameProperty.stringValue = spriteNames.Value[foundIndex];
+						continue;
+					}
+				}
+
+				so.ApplyModifiedPropertiesWithoutUndo();
+
+				// If file got renamed right before this, path will be incorrect.
+				if (File.Exists(pair.Key)) {
+					AssetDatabase.ImportAsset(pair.Key, ImportAssetOptions.ForceUpdate);
+				}
+
+				for (int nameIndex = 0; nameIndex < spriteNames.Key.Count; ++nameIndex) {
+					builder.AppendLine($"{pair.Key} - {spriteNames.Key[nameIndex]} => {spriteNames.Value[nameIndex]}");
+				}
+
+			}
+
+			return true;
 		}
 
 		private string TransformName(string targetName)
