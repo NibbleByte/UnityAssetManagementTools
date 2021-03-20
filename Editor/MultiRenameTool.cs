@@ -24,6 +24,7 @@ namespace DevLocker.Tools.AssetManagement
 		{
 			var window = GetWindow<MultiRenameTool>("Multi-Rename Tool");
 			window.minSize = new Vector2(350f, 400f);
+			window._showSelectHint = true;
 		}
 
 		private void OnSelectionChange()
@@ -91,6 +92,7 @@ namespace DevLocker.Tools.AssetManagement
 			TrimSpaces,
 		}
 
+		private bool _showSelectHint = false;
 
 		private Object _searchObject;
 		private string _searchPattern = string.Empty;
@@ -167,6 +169,19 @@ namespace DevLocker.Tools.AssetManagement
 
 			EditorGUILayout.LabelField("Multi-Rename Tool", EditorStyles.boldLabel);
 
+			if (_showSelectHint) {
+				EditorGUILayout.BeginHorizontal();
+				EditorGUILayout.HelpBox("Select object to be searched for renaming or toggle the padlock at the top to manually drag target object. You can also drag objects directly to the \"Results\" lists at the bottom.", MessageType.Info);
+				var prevColor = GUI.color;
+				GUI.color = new Color(0.8f, 0.70f, 0.380f);
+				if (GUILayout.Button(new GUIContent("X", "Hide hint."))) {
+					_showSelectHint = false;
+				}
+				GUI.color = prevColor;
+				EditorGUILayout.EndHorizontal();
+				EditorGUILayout.Space();
+			}
+
 			if (_showHelpAbout) {
 				DrawHelpAbout();
 				return;
@@ -193,25 +208,24 @@ namespace DevLocker.Tools.AssetManagement
 
 			EditorGUILayout.BeginHorizontal();
 			{
+				EditorGUILayout.BeginVertical();
+
 				EditorGUI.BeginDisabledGroup(!_searchPatternEnabled);
 				var labelContent = new GUIContent("Search Pattern", "Searched text in the objects' names.\nDisable to match any names.");
 				_searchPattern = TextFieldWithPlaceholder(labelContent, _searchPattern, _useCounters ? "Use \\d to match any numbers..." : "");
 				EditorGUI.EndDisabledGroup();
 
-				_searchPatternEnabled = EditorGUILayout.Toggle(_searchPatternEnabled, GUILayout.Width(16));
-
-			}
-			EditorGUILayout.EndHorizontal();
-
-
-			EditorGUILayout.BeginHorizontal();
-			{
 				EditorGUI.BeginDisabledGroup(!_replacePatternEnabled);
-				var labelContent = new GUIContent("Replace Pattern", "Replace the searched part of the objects' names.\nDisable to leave final names untouched. Useful with prefix / suffix.");
+				labelContent = new GUIContent("Replace Pattern", "Replace the searched part of the objects' names.\nDisable to leave final names untouched. Useful with prefix / suffix.");
 				_replacePattern = TextFieldWithPlaceholder(labelContent, _replacePattern, _useCounters ? "Use \\d to insert number..." : "");
 				EditorGUI.EndDisabledGroup();
 
+				EditorGUILayout.EndVertical();
+
+				EditorGUILayout.BeginVertical(GUILayout.Width(16));
+				_searchPatternEnabled = EditorGUILayout.Toggle(_searchPatternEnabled, GUILayout.Width(16));
 				_replacePatternEnabled = EditorGUILayout.Toggle(_replacePatternEnabled, GUILayout.Width(16));
+				EditorGUILayout.EndVertical();
 
 			}
 			EditorGUILayout.EndHorizontal();
