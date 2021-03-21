@@ -180,7 +180,7 @@ namespace DevLocker.Tools.AssetManagement
 
 			if (_showSelectHint) {
 				EditorGUILayout.BeginHorizontal();
-				EditorGUILayout.HelpBox("Select object to be searched for renaming or toggle the padlock at the top to manually drag target object. You can also drag objects directly to the \"Results\" lists at the bottom.", MessageType.Info);
+				EditorGUILayout.HelpBox("Select objects or folders to be searched for renaming or toggle the padlock at the top to manually drag target object. You can also drag objects directly to the \"Results\" lists at the bottom.", MessageType.Info);
 				var prevColor = GUI.color;
 				GUI.color = new Color(0.8f, 0.70f, 0.380f);
 				if (GUILayout.Button(new GUIContent("X", "Hide hint."))) {
@@ -626,63 +626,74 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void DrawResults()
 		{
-			EditorGUILayout.BeginVertical();
 			_scrollPos = EditorGUILayout.BeginScrollView(_scrollPos, false, false);
 
 			var prevBackground = GUI.backgroundColor;
 
-			for(int i = 0; i <_renameData.Count; ++i) {
-				var data = _renameData[i];
+			EditorGUILayout.BeginHorizontal();
 
-				EditorGUILayout.BeginHorizontal();
-
-				EditorGUILayout.ObjectField(data.Target, data.Target.GetType(), false);
-
-				if (data.Changed) {
-					GUI.backgroundColor = Color.yellow;
+			EditorGUILayout.BeginVertical();
+			{
+				foreach (var data in _renameData) {
+					EditorGUILayout.ObjectField(data.Target, data.Target.GetType(), false);
 				}
-
-				if (data.Target && data.Target.name.Equals(data.RenamedName, StringComparison.Ordinal)) {
-					GUI.backgroundColor = new Color(0.305f, 0.792f, 0.470f);
-				}
-
-				if (data.Conflict) {
-					GUI.backgroundColor = ErrorColor;
-				}
-
-				if (string.IsNullOrEmpty(data.RenamedName)) {
-					GUI.backgroundColor = ErrorColor;
-				}
-
-				EditorGUI.BeginChangeCheck();
-				data.RenamedName = EditorGUILayout.TextField(data.RenamedName);
-
-				if (EditorGUI.EndChangeCheck()) {
-					data.Changed = true;
-					data.RefreshNames();
-
-					// Mark (or clear) any conflicts with other result entries.
-					foreach (var renameData in _renameData) {
-						MarkConflicts(renameData);
-					}
-				}
-
-				GUI.backgroundColor = prevBackground;
-
-				if (GUILayout.Button(RemoveResultEntryContent, GUILayout.Width(20.0f), GUILayout.Height(16.0f))) {
-					_renameData.RemoveAt(i);
-					i--;
-				}
-
-				// TODO: Add indication that there are names clashing/overwriting.
-
-				EditorGUILayout.EndHorizontal();
 			}
+			EditorGUILayout.EndVertical();
+
+			EditorGUILayout.BeginVertical();
+			{
+				foreach (var data in _renameData) {
+					if (data.Changed) {
+						GUI.backgroundColor = Color.yellow;
+					}
+
+					if (data.Target && data.Target.name.Equals(data.RenamedName, StringComparison.Ordinal)) {
+						GUI.backgroundColor = new Color(0.305f, 0.792f, 0.470f);
+					}
+
+					if (data.Conflict) {
+						GUI.backgroundColor = ErrorColor;
+					}
+
+					if (string.IsNullOrEmpty(data.RenamedName)) {
+						GUI.backgroundColor = ErrorColor;
+					}
+
+					EditorGUI.BeginChangeCheck();
+					data.RenamedName = EditorGUILayout.TextField(data.RenamedName);
+
+					if (EditorGUI.EndChangeCheck()) {
+						data.Changed = true;
+						data.RefreshNames();
+
+						// Mark (or clear) any conflicts with other result entries.
+						foreach (var renameData in _renameData) {
+							MarkConflicts(renameData);
+						}
+					}
+
+					GUI.backgroundColor = prevBackground;
+				}
+			}
+			EditorGUILayout.EndVertical();
+
+			EditorGUILayout.BeginVertical();
+			{
+				for(int i = 0; i <_renameData.Count; ++i) {
+					if (GUILayout.Button(RemoveResultEntryContent, GUILayout.Width(20.0f), GUILayout.Height(16.0f))) {
+						_renameData.RemoveAt(i);
+						i--;
+					}
+
+				}
+			}
+			EditorGUILayout.EndVertical();
+
+			EditorGUILayout.EndHorizontal();
 
 			GUI.backgroundColor = prevBackground;
 
 			EditorGUILayout.EndScrollView();
-			EditorGUILayout.EndVertical();
 		}
 
 		private static GUIStyle DragDropZoneStyle = null;
