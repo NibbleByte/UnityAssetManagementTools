@@ -78,7 +78,8 @@ namespace DevLocker.Tools.AssetManagement
 
 			Folders = 1 << 0,
 			SceneHierarchy = 1 << 1,
-			SubAssetsAndSprites = 1 << 2,
+			Sprites = 1 << 2,
+			SubAssets = 1 << 3,
 
 			All = ~0,
 		}
@@ -102,7 +103,7 @@ namespace DevLocker.Tools.AssetManagement
 		private string _prefix = string.Empty;
 		private string _suffix = string.Empty;
 		private bool _folders = true;
-		private RecursiveModes _recursiveModes = RecursiveModes.All;
+		private RecursiveModes _recursiveModes = RecursiveModes.Folders | RecursiveModes.SceneHierarchy | RecursiveModes.Sprites;
 		private TransformModes _transformMode = TransformModes.TrimSpaces;
 		private bool _caseSensitive = true;
 
@@ -425,12 +426,16 @@ namespace DevLocker.Tools.AssetManagement
 				}
 
 				if ((_recursiveModes & RecursiveModes.Folders) != 0) {
-					var includeSubAssets = (_recursiveModes & RecursiveModes.SubAssetsAndSprites) != 0;
-					TryAppendFolderAssets(target, allTargets, includeSubAssets);
+					var includeSubAssets = (_recursiveModes & RecursiveModes.SubAssets) != 0;
+					var includeSprites = (_recursiveModes & RecursiveModes.Sprites) != 0;
+					TryAppendFolderAssets(target, allTargets, includeSubAssets, includeSprites);
 				}
 
-				if ((_recursiveModes & RecursiveModes.SubAssetsAndSprites) != 0) {
-					TryAppendSubAssets(target, allTargets);
+				if ((_recursiveModes & RecursiveModes.SubAssets) != 0) {
+					TryAppendSubAssets<Object>(target, allTargets);
+				}
+				if ((_recursiveModes & RecursiveModes.Sprites) != 0) {
+					TryAppendSubAssets<Sprite>(target, allTargets);
 				}
 
 				if ((_recursiveModes & RecursiveModes.SceneHierarchy) != 0) {
@@ -508,7 +513,7 @@ namespace DevLocker.Tools.AssetManagement
 			return true;
 		}
 
-		private void TryAppendFolderAssets(Object target, List<Object> allTargets, bool includeSubAssets)
+		private void TryAppendFolderAssets(Object target, List<Object> allTargets, bool includeSubAssets, bool includeSprites)
 		{
 			// Folder (probably).
 			if (AssetDatabase.Contains(target) && target is DefaultAsset) {
@@ -527,16 +532,19 @@ namespace DevLocker.Tools.AssetManagement
 					}
 
 					if (includeSubAssets) {
-						TryAppendSubAssets(foundTarget, allTargets);
+						TryAppendSubAssets<Object>(foundTarget, allTargets);
+					}
+					if (includeSprites) {
+						TryAppendSubAssets<Sprite>(foundTarget, allTargets);
 					}
 				}
 			}
 		}
 
-		private void TryAppendSubAssets(Object target, List<Object> allTargets)
+		private void TryAppendSubAssets<T>(Object target, List<Object> allTargets) where T : Object
 		{
 			if (AssetDatabase.Contains(target)) {
-				var subAssets = AssetDatabase.LoadAllAssetRepresentationsAtPath(AssetDatabase.GetAssetPath(target));
+				var subAssets = AssetDatabase.LoadAllAssetRepresentationsAtPath(AssetDatabase.GetAssetPath(target)).OfType<T>();
 				foreach (var subAsset in subAssets) {
 					// Scriptable object with deleted script will cause this.
 					if (subAsset == null) {
