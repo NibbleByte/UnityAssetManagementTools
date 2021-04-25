@@ -353,11 +353,14 @@ namespace DevLocker.Tools.AssetManagement
 					if (agreed) {
 
 						try {
-							AssetDatabase.StartAssetEditing();
+							// These don't work well with V2 Asset Pipeline.
+							// It cause standalone assets (e.g. Materials, ScriptableObjects) to get duplicated.
+							// Removing this optimization will make Sprite renaming slower.
+							//AssetDatabase.StartAssetEditing();
 							ExecuteRename();
 						}
 						finally {
-							AssetDatabase.StopAssetEditing();
+							//AssetDatabase.StopAssetEditing();
 							EditorUtility.ClearProgressBar();
 						}
 					}
