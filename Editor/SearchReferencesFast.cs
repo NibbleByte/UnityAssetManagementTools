@@ -505,6 +505,10 @@ namespace DevLocker.Tools.AssetManagement
 					_results.Data.ForEach(data => data.Value.ShowDetails = toggledShowDetails);
 				}
 
+				if (GUILayout.Button("Select All", GUILayout.ExpandWidth(false)) && _results.Data.Count > 0) {
+					Selection.objects = _results.Data.SelectMany(data => data.Value.Found).Distinct().ToArray();
+				}
+
 				DrawReplaceAllPrefabs();
 
 				DrawSaveResultsSlots();
