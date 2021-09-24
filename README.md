@@ -110,3 +110,8 @@ In the screenshot below:
 * The "Tank" prefab is referenced by another 3 scenes.
 * "Car" and "Tank" prefab can be replaced or removed in the found scenes with another using the last field.
 ![SearchReferencesFast](Docs/Screenshots/SearchReferencesFast.png)
+
+## Find References In Scene
+Search references to specified GameObject or component in the current scene (or prefab edit stage).
+Open by right click on GameObject and selecting "Find References In Scene". You can additionally drag in any component as well.
+![FindReferencesInSceneWindow](Docs/Screenshots/FindReferencesInSceneWindow.png)
