@@ -201,6 +201,7 @@ namespace DevLocker.Tools.AssetManagement
 		private bool m_Initialized = false;
 
 		private bool m_LaunchedSceneDirectly = false;
+		private SceneAsset m_PreviousStartScene;
 
 		// In big projects with 1k number of scenes, don't show everything.
 		[NonSerialized]
@@ -1364,11 +1365,13 @@ namespace DevLocker.Tools.AssetManagement
 				return;
 			}
 
+			m_LaunchedSceneDirectly = true;
+			m_PreviousStartScene = EditorSceneManager.playModeStartScene;
+
 			// YES! This exists from Unity 2017!!!! Bless you!!!
 			EditorSceneManager.playModeStartScene = AssetDatabase.LoadAssetAtPath<SceneAsset>(sceneEntry.Path);
 			EditorApplication.isPlaying = true;
 
-			m_LaunchedSceneDirectly = true;
 		}
 
 		private bool ClearDirectPlayScene()
@@ -1377,7 +1380,8 @@ namespace DevLocker.Tools.AssetManagement
 				m_LaunchedSceneDirectly = false;
 
 				// Because this property survives the assembly reload, leaving normal play button stuck on our scene.
-				EditorSceneManager.playModeStartScene = null;
+				EditorSceneManager.playModeStartScene = m_PreviousStartScene;
+				m_PreviousStartScene = null;
 				return true;
 			}
 
