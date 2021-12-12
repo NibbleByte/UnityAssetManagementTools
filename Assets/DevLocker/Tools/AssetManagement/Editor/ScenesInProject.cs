@@ -192,13 +192,15 @@ namespace DevLocker.Tools.AssetManagement
 		private GUIContent PreferencesButtonContent;
 		private GUIContent QuickSortButtonContent;
 
-		public static bool AssetsChanged = false;
+		internal static bool AssetsChanged = false;
 
 		// Used to synchronize instances.
 		private static List<ScenesInProject> m_Instances = new List<ScenesInProject>();
 
 
 		private bool m_Initialized = false;
+
+		private bool m_LaunchedSceneDirectly = false;
 
 		// In big projects with 1k number of scenes, don't show everything.
 		[NonSerialized]
@@ -526,6 +528,13 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void OnEnable()
 		{
+			if (m_LaunchedSceneDirectly) {
+				m_LaunchedSceneDirectly = false;
+
+				// Because this property survives the assembly reload, leaving normal play button stuck on our scene.
+				EditorSceneManager.playModeStartScene = null;
+			}
+
 			m_Instances.Add(this);
 
 			m_SerializedObject = new SerializedObject(this);
@@ -1347,6 +1356,8 @@ namespace DevLocker.Tools.AssetManagement
 			// YES! This exists from Unity 2017!!!! Bless you!!!
 			EditorSceneManager.playModeStartScene = AssetDatabase.LoadAssetAtPath<SceneAsset>(sceneEntry.Path);
 			EditorApplication.isPlaying = true;
+
+			m_LaunchedSceneDirectly = true;
 		}
 
 		private void ShowQuickSortOptions()
