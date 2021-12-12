@@ -246,6 +246,22 @@ namespace DevLocker.Tools.AssetManagement
 			}
 		}
 
+#if UNITY_2019_2_OR_NEWER
+		/// <summary>
+		/// Called when assembly reload is disabled.
+		/// </summary>
+		[RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+		private static void InitOnPlay()
+		{
+			// NOTE: This executes after OnEnable() when doing assembly reload so it may be doing double the work,
+			//		 but since the documentation is not very clear about it, I'm not taking any chances. Also it is not supported prior to Unity 2019.
+			foreach (var instance in m_Instances) {
+				if (instance.ClearDirectPlayScene())
+					break;
+			};
+		}
+#endif
+
 		// Hidden Unity function, used to draw lock and other buttons at the top of the window.
 		private void ShowButton(Rect rect)
 		{
@@ -528,12 +544,7 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void OnEnable()
 		{
-			if (m_LaunchedSceneDirectly) {
-				m_LaunchedSceneDirectly = false;
-
-				// Because this property survives the assembly reload, leaving normal play button stuck on our scene.
-				EditorSceneManager.playModeStartScene = null;
-			}
+			ClearDirectPlayScene();
 
 			m_Instances.Add(this);
 
@@ -1358,6 +1369,19 @@ namespace DevLocker.Tools.AssetManagement
 			EditorApplication.isPlaying = true;
 
 			m_LaunchedSceneDirectly = true;
+		}
+
+		private bool ClearDirectPlayScene()
+		{
+			if (m_LaunchedSceneDirectly) {
+				m_LaunchedSceneDirectly = false;
+
+				// Because this property survives the assembly reload, leaving normal play button stuck on our scene.
+				EditorSceneManager.playModeStartScene = null;
+				return true;
+			}
+
+			return false;
 		}
 
 		private void ShowQuickSortOptions()
