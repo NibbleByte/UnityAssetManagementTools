@@ -231,11 +231,25 @@ namespace DevLocker.Tools.AssetManagement
 		private SerializedObject m_SerializedObject;
 
 		private bool m_ShowPreferences = false;
-		private const string PERSONAL_PREFERENCES_PATH = "Library/ScenesInProject.prefs";
-		private const string PROJECT_PREFERENCES_PATH = "ProjectSettings/ScenesInProject.prefs";
 
-		private const string SettingsPathScenes = "Library/ScenesInProject.Scenes.txt";
-		private const string SettingsPathPinnedScenes = "Library/ScenesInProject.PinnedScenes.txt";
+
+		// Legacy preferences path from before Unity "UserSettings" folder existed
+		private const string Legacy_PersonalPreferencesPath = "Library/ScenesInProject.prefs";
+		private const string Legacy_SettingsPathScenes = "Library/ScenesInProject.Scenes.txt";
+		private const string Legacy_SettingsPathPinnedScenes = "Library/ScenesInProject.PinnedScenes.txt";
+
+#if UNITY_2020_1_OR_NEWER
+		private const string PersonalPreferencesPath = "UserSettings/ScenesInProject.prefs";
+		private const string SettingsPathScenes = "UserSettings/ScenesInProject.Scenes.txt";
+		private const string SettingsPathPinnedScenes = "UserSettings/ScenesInProject.PinnedScenes.txt";
+#else
+		private const string PersonalPreferencesPath = Legacy_PersonalPreferencesPath;
+		private const string SettingsPathScenes = Legacy_SettingsPathScenes;
+		private const string SettingsPathPinnedScenes = Legacy_SettingsPathPinnedScenes;
+#endif
+
+		private const string ProjectPreferencesPath = "ProjectSettings/ScenesInProject.prefs";
+
 
 		[MenuItem("Tools/Asset Management/Scenes In Project", false, 68)]
 		private static void Init()
@@ -276,7 +290,7 @@ namespace DevLocker.Tools.AssetManagement
 			}
 		}
 
-		#region LEGACY SUPPORT
+#region LEGACY SUPPORT
 		private bool LEGACY_ReadPinnedListFromPrefs()
 		{
 			bool hasChanged = false;
@@ -329,7 +343,7 @@ namespace DevLocker.Tools.AssetManagement
 
 			return hasChanged;
 		}
-		#endregion
+#endregion
 
 		private void StoreAllScenes()
 		{
@@ -339,12 +353,12 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void StorePersonalPrefs()
 		{
-			File.WriteAllText(PERSONAL_PREFERENCES_PATH, JsonUtility.ToJson(m_PersonalPrefs, true));
+			File.WriteAllText(PersonalPreferencesPath, JsonUtility.ToJson(m_PersonalPrefs, true));
 		}
 
 		private void StoreProjectPrefs()
 		{
-			File.WriteAllText(PROJECT_PREFERENCES_PATH, JsonUtility.ToJson(m_ProjectPrefs, true));
+			File.WriteAllText(ProjectPreferencesPath, JsonUtility.ToJson(m_ProjectPrefs, true));
 		}
 
 		private static bool RemoveRedundant(List<SceneEntry> list, List<string> scenesInDB)
@@ -573,25 +587,33 @@ namespace DevLocker.Tools.AssetManagement
 		//
 		private void LoadData()
 		{
-			if (File.Exists(PERSONAL_PREFERENCES_PATH)) {
-				m_PersonalPrefs = JsonUtility.FromJson<PersonalPreferences>(File.ReadAllText(PERSONAL_PREFERENCES_PATH));
+			if (File.Exists(PersonalPreferencesPath)) {
+				m_PersonalPrefs = JsonUtility.FromJson<PersonalPreferences>(File.ReadAllText(PersonalPreferencesPath));
+			} else if (File.Exists(Legacy_PersonalPreferencesPath)) {
+				m_PersonalPrefs = JsonUtility.FromJson<PersonalPreferences>(File.ReadAllText(Legacy_PersonalPreferencesPath));
 			} else {
 				m_PersonalPrefs = new PersonalPreferences();
 			}
 
 			InitializeSplitter(m_PersonalPrefs.SplitterY);
 
-			if (File.Exists(PROJECT_PREFERENCES_PATH)) {
-				m_ProjectPrefs = JsonUtility.FromJson<ProjectPreferences>(File.ReadAllText(PROJECT_PREFERENCES_PATH));
+			if (File.Exists(ProjectPreferencesPath)) {
+				m_ProjectPrefs = JsonUtility.FromJson<ProjectPreferences>(File.ReadAllText(ProjectPreferencesPath));
 			} else {
 				m_ProjectPrefs = new ProjectPreferences();
 			}
 
-			if (File.Exists(SettingsPathPinnedScenes))
+			if (File.Exists(SettingsPathPinnedScenes)) {
 				m_Pinned = new List<SceneEntry>(File.ReadAllLines(SettingsPathPinnedScenes).Select(line => new SceneEntry(line)));
+			} else if (File.Exists(Legacy_SettingsPathPinnedScenes)) {
+				m_Pinned = new List<SceneEntry>(File.ReadAllLines(Legacy_SettingsPathPinnedScenes).Select(line => new SceneEntry(line)));
+			}
 
-			if (File.Exists(SettingsPathScenes))
+			if (File.Exists(SettingsPathScenes)) {
 				m_Scenes = new List<SceneEntry>(File.ReadAllLines(SettingsPathScenes).Select(line => new SceneEntry(line)));
+			} else if (File.Exists(Legacy_SettingsPathScenes)) {
+				m_Scenes = new List<SceneEntry>(File.ReadAllLines(Legacy_SettingsPathScenes).Select(line => new SceneEntry(line)));
+			}
 		}
 
 		private void InitializeData()
