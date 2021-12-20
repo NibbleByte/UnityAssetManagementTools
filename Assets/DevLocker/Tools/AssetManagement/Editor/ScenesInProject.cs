@@ -337,10 +337,13 @@ namespace DevLocker.Tools.AssetManagement
 			File.WriteAllLines(SettingsPathScenes, m_Scenes.Select(e => e.Path));
 		}
 
-		private void StorePrefs()
+		private void StorePersonalPrefs()
 		{
 			File.WriteAllText(PERSONAL_PREFERENCES_PATH, JsonUtility.ToJson(m_PersonalPrefs, true));
+		}
 
+		private void StoreProjectPrefs()
+		{
 			File.WriteAllText(PROJECT_PREFERENCES_PATH, JsonUtility.ToJson(m_ProjectPrefs, true));
 		}
 
@@ -1052,7 +1055,7 @@ namespace DevLocker.Tools.AssetManagement
 			if (m_IsSplitterDragged && Event.current.type == EventType.MouseUp) {
 				m_IsSplitterDragged = false;
 				m_PersonalPrefs.SplitterY = m_SplitterRect.y;
-				StorePrefs();
+				StorePersonalPrefs();
 			}
 		}
 
@@ -1068,7 +1071,7 @@ namespace DevLocker.Tools.AssetManagement
 			m_SplitterRect.y = CalcSplitterMaxY();
 
 			m_PersonalPrefs.SplitterY = m_SplitterRect.y;
-			StorePrefs();
+			StorePersonalPrefs();
 		}
 
 		private bool IsFilteredOut(string sceneName, string[] filterWords)
@@ -1570,7 +1573,8 @@ namespace DevLocker.Tools.AssetManagement
 			RefreshColorizePatterns(m_Scenes);
 			RefreshColorizePatterns(m_Pinned);
 
-			StorePrefs();
+			StorePersonalPrefs();
+			StoreProjectPrefs();
 
 			m_ShowPreferences = false;
 			m_SelectedTab = PreferencesTab.Personal;
