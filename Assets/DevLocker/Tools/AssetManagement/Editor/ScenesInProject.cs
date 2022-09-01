@@ -347,18 +347,35 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void StoreAllScenes()
 		{
-			File.WriteAllLines(SettingsPathPinnedScenes, m_Pinned.Select(e => e.Path));
-			File.WriteAllLines(SettingsPathScenes, m_Scenes.Select(e => e.Path));
+			try {
+				File.WriteAllLines(SettingsPathPinnedScenes, m_Pinned.Select(e => e.Path));
+				File.WriteAllLines(SettingsPathScenes, m_Scenes.Select(e => e.Path));
+			}
+			catch (Exception ex) {
+				Debug.LogException(ex);
+			}
 		}
 
 		private void StorePersonalPrefs()
 		{
-			File.WriteAllText(PersonalPreferencesPath, JsonUtility.ToJson(m_PersonalPrefs, true));
+			try {
+				File.WriteAllText(PersonalPreferencesPath, JsonUtility.ToJson(m_PersonalPrefs, true));
+			}
+			catch (Exception ex) {
+				Debug.LogException(ex);
+				EditorUtility.DisplayDialog("Error", $"Failed to write file:\n\"{PersonalPreferencesPath}\"\n\nData not saved! Check the logs for more info.", "Ok");
+			}
 		}
 
 		private void StoreProjectPrefs()
 		{
-			File.WriteAllText(ProjectPreferencesPath, JsonUtility.ToJson(m_ProjectPrefs, true));
+			try {
+				File.WriteAllText(ProjectPreferencesPath, JsonUtility.ToJson(m_ProjectPrefs, true));
+			}
+			catch (Exception ex) {
+				Debug.LogException(ex);
+				EditorUtility.DisplayDialog("Error", $"Failed to write file:\n\"{ProjectPreferencesPath}\"\n\nData not saved! Check the logs for more info.", "Ok");
+			}
 		}
 
 		private static bool RemoveRedundant(List<SceneEntry> list, List<string> scenesInDB)
