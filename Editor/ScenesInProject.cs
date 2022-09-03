@@ -28,6 +28,9 @@ namespace DevLocker.Tools.AssetManagement
 		private enum PinnedOptions
 		{
 			Unpin,
+			CopyAssetPath,
+			ExcludeScene,
+			ExcludeFolder,
 			MoveFirst,
 			MoveLast,
 			ShowInExplorer,
@@ -37,6 +40,9 @@ namespace DevLocker.Tools.AssetManagement
 		private enum UnpinnedOptions
 		{
 			Pin,
+			CopyAssetPath,
+			ExcludeScene,
+			ExcludeFolder,
 			MoveFirst,
 			MoveLast,
 			ShowInExplorer,
@@ -1308,6 +1314,22 @@ namespace DevLocker.Tools.AssetManagement
 
 					break;
 
+				case PinnedOptions.CopyAssetPath:
+					EditorGUIUtility.systemCopyBuffer = m_Pinned[index].Path;
+					break;
+
+				case PinnedOptions.ExcludeScene:
+					m_PersonalPrefs.Exclude.Add(m_Pinned[index].Path);
+					StorePersonalPrefs();
+					AssetsChanged = true;
+					break;
+
+				case PinnedOptions.ExcludeFolder:
+					m_PersonalPrefs.Exclude.Add(Path.GetDirectoryName(m_Pinned[index].Path).Replace("\\", "/"));
+					StorePersonalPrefs();
+					AssetsChanged = true;
+					break;
+
 				case PinnedOptions.MoveFirst:
 					m_Pinned.Insert(0, m_Pinned[index]);
 					m_Pinned.RemoveAt(index + 1);
@@ -1364,6 +1386,22 @@ namespace DevLocker.Tools.AssetManagement
 						m_Pinned.Insert(pinIndex + 1, sceneEntry);
 					}
 
+					break;
+
+				case UnpinnedOptions.CopyAssetPath:
+					EditorGUIUtility.systemCopyBuffer = m_Scenes[index].Path;
+					break;
+
+				case UnpinnedOptions.ExcludeScene:
+					m_PersonalPrefs.Exclude.Add(m_Scenes[index].Path);
+					StorePersonalPrefs();
+					AssetsChanged = true;
+					break;
+
+				case UnpinnedOptions.ExcludeFolder:
+					m_PersonalPrefs.Exclude.Add(Path.GetDirectoryName(m_Scenes[index].Path).Replace("\\", "/"));
+					StorePersonalPrefs();
+					AssetsChanged = true;
 					break;
 
 				case UnpinnedOptions.MoveFirst:
@@ -1597,11 +1635,24 @@ namespace DevLocker.Tools.AssetManagement
 			var splitterChars = new char[] { ';' };
 
 			m_PersonalPrefs.DisplayRemoveFolders.RemoveAll(string.IsNullOrWhiteSpace);
-			m_PersonalPrefs.Exclude.RemoveAll(string.IsNullOrWhiteSpace);
-			m_PersonalPrefs.ColorizePatterns.RemoveAll(c => c.Patterns.Split(splitterChars, StringSplitOptions.RemoveEmptyEntries).Length == 0);
+			m_PersonalPrefs.Exclude = m_PersonalPrefs.Exclude
+				.Where(e => !string.IsNullOrWhiteSpace(e))
+				.Select(e => e.Replace('\\', '/').Trim())
+				.ToList();
+			m_PersonalPrefs.ColorizePatterns = m_PersonalPrefs.ColorizePatterns
+				.Where(c => !string.IsNullOrWhiteSpace(c.Patterns))
+				.Select(c => { c.Patterns = c.Patterns.Replace('\\', '/').Trim(); return c; })
+				.ToList();
 
-			m_ProjectPrefs.Exclude.RemoveAll(string.IsNullOrWhiteSpace);
-			m_ProjectPrefs.ColorizePatterns.RemoveAll(c => c.Patterns.Split(splitterChars, StringSplitOptions.RemoveEmptyEntries).Length == 0);
+
+			m_ProjectPrefs.Exclude = m_ProjectPrefs.Exclude
+				.Where(e => !string.IsNullOrWhiteSpace(e))
+				.Select(e => e.Replace('\\', '/').Trim())
+				.ToList();
+			m_ProjectPrefs.ColorizePatterns = m_ProjectPrefs.ColorizePatterns
+				.Where(c => !string.IsNullOrWhiteSpace(c.Patterns))
+				.Select(c => { c.Patterns = c.Patterns.Replace('\\', '/').Trim(); return c; })
+				.ToList();
 
 			// Sort explicitly, so assets will change on reload.
 			SortScenes(m_Scenes, m_PersonalPrefs.SortType);
@@ -1622,7 +1673,7 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void DrawPersonalPreferences()
 		{
-			EditorGUILayout.HelpBox("These are personal preferences, stored in the Library folder.\nHint: check the the tooltips.", MessageType.Info);
+			EditorGUILayout.HelpBox("These are personal preferences, stored in the UserSettings folder.\nHint: check the the tooltips.", MessageType.Info);
 
 			m_PersonalPrefs.SortType = (SortType)EditorGUILayout.EnumPopup(new GUIContent("Sort by", "How to automatically sort the list of scenes (not the pinned ones).\nNOTE: Changing this will loose the \"Most Recent\" sort done by now."), m_PersonalPrefs.SortType);
 			m_PersonalPrefs.SceneDisplay = (SceneDisplay)EditorGUILayout.EnumPopup(new GUIContent("Display entries", "How scenes should be displayed."), m_PersonalPrefs.SceneDisplay);
