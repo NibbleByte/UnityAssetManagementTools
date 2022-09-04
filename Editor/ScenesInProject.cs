@@ -542,46 +542,54 @@ namespace DevLocker.Tools.AssetManagement
 			var splitters = new char[] { ';' };
 
 			foreach(var sceneEntry in list) {
+				sceneEntry.ColorizePattern = GetMatchedColorPattern(sceneEntry.Path, m_ProjectPrefs.ColorizePatterns.Concat(m_PersonalPrefs.ColorizePatterns));
+			}
+		}
 
-				sceneEntry.ColorizePattern = null;
+		private static ColorizePattern GetMatchedColorPattern(string scenePath, IEnumerable<ColorizePattern> colorPatterns)
+		{
+			var splitters = new char[] { ';' };
+			string sceneName = Path.GetFileNameWithoutExtension(scenePath);
 
-				foreach (var colors in m_ProjectPrefs.ColorizePatterns.Concat(m_PersonalPrefs.ColorizePatterns)) {
+			ColorizePattern colorPattern = null;
 
-					var patterns = colors.Patterns.Split(splitters, StringSplitOptions.RemoveEmptyEntries);
+			foreach (ColorizePattern colors in colorPatterns) {
 
-					foreach (var pattern in patterns) {
+				var patterns = colors.Patterns.Split(splitters, StringSplitOptions.RemoveEmptyEntries);
 
-						bool isPath = pattern.Contains("/");
+				foreach (string pattern in patterns) {
 
-						// Find best match for this scene entry.
-						if (isPath) {
-							if (sceneEntry.Path.StartsWith(pattern, StringComparison.OrdinalIgnoreCase)) {
+					bool isPath = pattern.Contains("/");
 
-								var prevPattern = sceneEntry.ColorizePattern?.Patterns ?? string.Empty;
+					// Find best match for this scene entry.
+					if (isPath) {
+						if (scenePath.StartsWith(pattern, StringComparison.OrdinalIgnoreCase)) {
 
-								// Allow only better path match to override previous - only paths, no names.
-								// Note: This doesn't work for multiple patterns.
-								var betterPath = prevPattern.Contains("/") && prevPattern.Length <= pattern.Length;
+							var prevPattern = colorPattern?.Patterns ?? string.Empty;
 
-								if (sceneEntry.ColorizePattern == null || betterPath) {
-									sceneEntry.ColorizePattern = colors;
-								}
+							// Allow only better path match to override previous - only paths, no names.
+							// Note: This doesn't work for multiple patterns.
+							var betterPath = prevPattern.Contains("/") && prevPattern.Length <= pattern.Length;
 
-								break;
+							if (colorPattern == null || betterPath) {
+								colorPattern = colors;
 							}
 
-						} else {
+							break;
+						}
 
-							// This is always preferred to path.
-							if (sceneEntry.Name.IndexOf(pattern, StringComparison.OrdinalIgnoreCase) != -1) {
-								sceneEntry.ColorizePattern = colors;
+					} else {
 
-								break;
-							}
+						// This is always preferred to path.
+						if (sceneName.IndexOf(pattern, StringComparison.OrdinalIgnoreCase) != -1) {
+							colorPattern = colors;
+							break;
 						}
 					}
 				}
 			}
+
+			return colorPattern;
 		}
 
 		private void OnEnable()
@@ -1479,13 +1487,9 @@ namespace DevLocker.Tools.AssetManagement
 		private void OnColorizeOption(object data)
 		{
 			var pair = (KeyValuePair<ColorizeOptions, string>)data;
-			string path = pair.Value;
+			string scenePath = pair.Value;
 
-			ColorizePattern pattern = m_PersonalPrefs.ColorizePatterns.FirstOrDefault(cp => cp.Patterns.Contains(path));
-			if (pattern == null) {
-				path = Path.GetDirectoryName(path);
-				pattern = m_PersonalPrefs.ColorizePatterns.FirstOrDefault(cp => cp.Patterns.Contains(path));
-			}
+			ColorizePattern colorPattern;
 
 			Color backgroundColor = Color.white;
 			Color textColor = Color.black;
@@ -1527,11 +1531,33 @@ namespace DevLocker.Tools.AssetManagement
 					break;
 
 				case ColorizeOptions.Clear:
-					if (pattern == null)
-						return;
 
-					m_PersonalPrefs.ColorizePatterns.Remove(pattern);
-					break;
+					colorPattern = m_PersonalPrefs.ColorizePatterns.FirstOrDefault(cp => cp.Patterns.Contains(scenePath));
+
+					if (colorPattern == null) {
+						colorPattern = GetMatchedColorPattern(scenePath, m_PersonalPrefs.ColorizePatterns);
+
+						if (colorPattern != null) {
+							bool choice = EditorUtility.DisplayDialog(
+								"Clear Scene Colorization",
+								$"Selected scene is included in a bigger colorize pattern:\n\"{colorPattern.Patterns}\"\nDo you want to clear the original pattern?",
+								"Clear the original pattern", "Cancel"
+								);
+
+							if (!choice)
+								return;
+						}
+					}
+
+					if (colorPattern != null) {
+						m_PersonalPrefs.ColorizePatterns.Remove(colorPattern);
+
+						RefreshColorizePatterns(m_Scenes);
+						RefreshColorizePatterns(m_Pinned);
+
+						StorePersonalPrefs();
+					}
+					return;
 
 				case ColorizeOptions.Custom:
 					m_ShowPreferences = true;
@@ -1543,19 +1569,37 @@ namespace DevLocker.Tools.AssetManagement
 
 			}
 
+			colorPattern = m_PersonalPrefs.ColorizePatterns.FirstOrDefault(cp => cp.Patterns.Contains(scenePath));
 
-			if (pattern == null) {
-				pattern = new ColorizePattern() {
-					Patterns = pair.Value,	// NOTE: use the original path if newly created.
-					BackgroundColor = Color.white,
-					TextColor = Color.black,
-				};
-				m_PersonalPrefs.ColorizePatterns.Add(pattern);
-				EditorUtility.SetDirty(this);
+			if (colorPattern == null) {
+				colorPattern = GetMatchedColorPattern(scenePath, m_PersonalPrefs.ColorizePatterns);
+
+				if (colorPattern != null) {
+					int choice = EditorUtility.DisplayDialogComplex(
+						"Colorize scene",
+						$"Selected scene is included in another colorize pattern:\n\"{colorPattern.Patterns}\"\nDo you want to colorize the selected scene or change the original pattern colors?",
+						"Scene only", "Cancel", "Original folder pattern"
+						);
+					if (choice == 1)
+						return;
+
+					if (choice == 0) {
+						colorPattern = null;
+					}
+				}
+
+				if (colorPattern == null) {
+					colorPattern = new ColorizePattern() {
+						Patterns = scenePath,	// NOTE: use the original path if newly created.
+						BackgroundColor = Color.white,
+						TextColor = Color.black,
+					};
+					m_PersonalPrefs.ColorizePatterns.Add(colorPattern);
+				}
 			}
 
-			pattern.BackgroundColor = backgroundColor;
-			pattern.TextColor = textColor;
+			colorPattern.BackgroundColor = backgroundColor;
+			colorPattern.TextColor = textColor;
 
 			RefreshColorizePatterns(m_Scenes);
 			RefreshColorizePatterns(m_Pinned);
@@ -1798,7 +1842,10 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void DrawPersonalPreferences()
 		{
-			EditorGUILayout.HelpBox("These are personal preferences, stored in the UserSettings folder.\nHint: check the the tooltips.", MessageType.Info);
+			EditorGUILayout.HelpBox("These are personal preferences, stored in the UserSettings folder.\n" +
+				"Hint: you can type in folders instead of specific scene assets.\n" +
+				"For more info check the tooltips.",
+				MessageType.Info);
 
 			m_PersonalPrefs.SortType = (SortType)EditorGUILayout.EnumPopup(new GUIContent("Sort by", "How to automatically sort the list of scenes (not the pinned ones).\nNOTE: Changing this will loose the \"Most Recent\" sort done by now."), m_PersonalPrefs.SortType);
 			m_PersonalPrefs.SceneDisplay = (SceneDisplay)EditorGUILayout.EnumPopup(new GUIContent("Display entries", "How scenes should be displayed."), m_PersonalPrefs.SceneDisplay);
