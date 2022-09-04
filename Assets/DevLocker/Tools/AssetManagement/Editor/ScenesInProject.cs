@@ -705,6 +705,11 @@ namespace DevLocker.Tools.AssetManagement
 			SceneOptionsButtonStyle = new GUIStyle(GUI.skin.button);
 			SceneOptionsButtonStyle.alignment = TextAnchor.MiddleCenter;
 			SceneOptionsButtonStyle.padding.left += 2;
+#if UNITY_2019_1_OR_NEWER
+			SceneOptionsButtonStyle.padding.top = 1;
+			SceneOptionsButtonStyle.padding.bottom = 1;
+			SceneOptionsButtonStyle.fontSize = 14;	// Unity 2020+ default is 12 and squishes the character.
+#endif
 
 			ScenePlayButtonStyle = new GUIStyle(GUI.skin.GetStyle("ButtonLeft"));
 			ScenePlayButtonStyle.alignment = TextAnchor.MiddleCenter;
