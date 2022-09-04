@@ -1157,10 +1157,31 @@ namespace DevLocker.Tools.AssetManagement
 			var prevColor = SceneButtonStyle.normal.textColor;
 			if (sceneEntry.ColorizePattern != null && !string.IsNullOrEmpty(sceneEntry.ColorizePattern.Patterns)) {
 				GUI.backgroundColor = sceneEntry.ColorizePattern.BackgroundColor;
+				if (EditorGUIUtility.isProSkin) {
+					GUI.backgroundColor = GUI.backgroundColor + new Color(0.3f, 0.3f, 0.3f);
+				}
+
 				SceneButtonStyle.normal.textColor
+					= SceneButtonStyle.hover.textColor
+					= SceneButtonStyle.active.textColor
+					= SceneButtonStyle.focused.textColor
+
 					= SceneOptionsButtonStyle.normal.textColor
+					= SceneOptionsButtonStyle.hover.textColor
+					= SceneOptionsButtonStyle.active.textColor
+					= SceneOptionsButtonStyle.focused.textColor
+
 					= ScenePlayButtonStyle.normal.textColor
+					= ScenePlayButtonStyle.hover.textColor
+					= ScenePlayButtonStyle.active.textColor
+					= ScenePlayButtonStyle.focused.textColor
+
 					= SceneLoadedButtonStyle.normal.textColor
+					= SceneLoadedButtonStyle.hover.textColor
+					= SceneLoadedButtonStyle.active.textColor
+					= SceneLoadedButtonStyle.focused.textColor
+
+					= GUI.contentColor
 					= sceneEntry.ColorizePattern.TextColor;
 			}
 
@@ -1193,9 +1214,26 @@ namespace DevLocker.Tools.AssetManagement
 
 			GUI.backgroundColor = prevBackgroundColor;
 			SceneButtonStyle.normal.textColor
+				= SceneButtonStyle.hover.textColor
+				= SceneButtonStyle.active.textColor
+				= SceneButtonStyle.focused.textColor
+
 				= SceneOptionsButtonStyle.normal.textColor
+				= SceneOptionsButtonStyle.hover.textColor
+				= SceneOptionsButtonStyle.active.textColor
+				= SceneOptionsButtonStyle.focused.textColor
+
 				= ScenePlayButtonStyle.normal.textColor
+				= ScenePlayButtonStyle.hover.textColor
+				= ScenePlayButtonStyle.active.textColor
+				= ScenePlayButtonStyle.focused.textColor
+
 				= SceneLoadedButtonStyle.normal.textColor
+				= SceneLoadedButtonStyle.hover.textColor
+				= SceneLoadedButtonStyle.active.textColor
+				= SceneLoadedButtonStyle.focused.textColor
+
+				= GUI.contentColor
 				= prevColor;
 
 			if (scenePressed || optionsPressed || playPressed || loadPressed) {
@@ -1435,10 +1473,6 @@ namespace DevLocker.Tools.AssetManagement
 			var pair = (KeyValuePair<ColorizeOptions, string>)data;
 			string path = pair.Value;
 
-			//int choice = EditorUtility.DisplayDialogComplex("Colorize target", "Colorize scene or entire folder that the scene is in?", "Scene only", "Cancel", "Entire Folder");
-			//if (choice == 2)
-			//	return;
-
 			ColorizePattern pattern = m_PersonalPrefs.ColorizePatterns.FirstOrDefault(cp => cp.Patterns.Contains(path));
 			if (pattern == null) {
 				path = Path.GetDirectoryName(path);
@@ -1450,37 +1484,37 @@ namespace DevLocker.Tools.AssetManagement
 
 			switch(pair.Key) {
 				case ColorizeOptions.Red:
-					backgroundColor = new Color(0.8f, 0.4745f, 0.4745f);
+					backgroundColor = new Color(0.7f, 0.3745f, 0.3745f);
 					textColor = Color.white;
 					break;
 
 				case ColorizeOptions.Green:
-					backgroundColor = new Color(0.3817f, 0.649f, 0.3945f);
+					backgroundColor = new Color(0.2817f, 0.549f, 0.2945f);
 					textColor = Color.white;
 					break;
 
 				case ColorizeOptions.Blue:
-					backgroundColor = new Color(0.3875f, 0.6648f, 0.711f);
+					backgroundColor = new Color(0.2875f, 0.5648f, 0.611f);
 					textColor = Color.white;
 					break;
 
 				case ColorizeOptions.Orange:
-					backgroundColor = new Color(0.875f, 0.656f, 0.409f);
+					backgroundColor = new Color(0.775f, 0.556f, 0.309f);
 					textColor = Color.white;
 					break;
 
 				case ColorizeOptions.Yellow:
-					backgroundColor = new Color(0.734f, 0.7267f, 0.2725f);
+					backgroundColor = new Color(0.634f, 0.6267f, 0.1725f);
 					textColor = Color.white;
 					break;
 
 				case ColorizeOptions.Brown:
-					backgroundColor = new Color(0.7529f, 0.6431f, 0.4392f);
+					backgroundColor = new Color(0.6529f, 0.5431f, 0.3392f);
 					textColor = Color.white;
 					break;
 
 				case ColorizeOptions.Purple:
-					backgroundColor = new Color(0.647f, 0.38f, 0.5888f);
+					backgroundColor = new Color(0.547f, 0.28f, 0.4888f);
 					textColor = Color.white;
 					break;
 
