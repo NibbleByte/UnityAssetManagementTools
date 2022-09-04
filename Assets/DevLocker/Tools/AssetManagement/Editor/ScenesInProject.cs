@@ -1562,6 +1562,8 @@ namespace DevLocker.Tools.AssetManagement
 						RefreshColorizePatterns(m_Scenes);
 						RefreshColorizePatterns(m_Pinned);
 
+						SynchronizeInstancesToMe();
+
 						StorePersonalPrefs();
 					}
 					return;
@@ -1610,6 +1612,8 @@ namespace DevLocker.Tools.AssetManagement
 
 			RefreshColorizePatterns(m_Scenes);
 			RefreshColorizePatterns(m_Pinned);
+
+			SynchronizeInstancesToMe();
 
 			StorePersonalPrefs();
 		}
