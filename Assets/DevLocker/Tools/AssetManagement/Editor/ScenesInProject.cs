@@ -29,8 +29,8 @@ namespace DevLocker.Tools.AssetManagement
 		{
 			Unpin,
 			CopyAssetPath,
-			ExcludeScene,
-			ExcludeFolder,
+			Colorize,
+			Exclude,
 			MoveFirst,
 			MoveLast,
 			ShowInExplorer,
@@ -41,12 +41,25 @@ namespace DevLocker.Tools.AssetManagement
 		{
 			Pin,
 			CopyAssetPath,
-			ExcludeScene,
-			ExcludeFolder,
+			Colorize,
+			Exclude,
 			MoveFirst,
 			MoveLast,
 			ShowInExplorer,
 			ShowInProject,
+		}
+
+		private enum ColorizeOptions
+		{
+			Red,
+			Green,
+			Blue,
+			Orange,
+			Yellow,
+			Brown,
+			Purple,
+			Clear,
+			Custom,
 		}
 
 		private enum SortType
@@ -1272,7 +1285,25 @@ namespace DevLocker.Tools.AssetManagement
 			int index = m_Pinned.IndexOf(sceneEntry);
 
 			foreach (PinnedOptions value in Enum.GetValues(typeof(PinnedOptions))) {
-				menu.AddItem(new GUIContent(ObjectNames.NicifyVariableName(value.ToString())), false, OnSelectPinnedOption, new KeyValuePair<PinnedOptions, int>(value, index));
+
+				if (value == PinnedOptions.Exclude) {
+					menu.AddItem(new GUIContent($"Exclude/Exclude Scene"), false, OnExcludeOption, sceneEntry.Path);
+					menu.AddItem(new GUIContent($"Exclude/Exclude Folder"), false, OnExcludeOption, Path.GetDirectoryName(sceneEntry.Path).Replace("\\", "/"));
+					continue;
+				}
+
+				if (value == PinnedOptions.Colorize) {
+					foreach (ColorizeOptions colorValue in Enum.GetValues(typeof(ColorizeOptions))) {
+						if (colorValue == ColorizeOptions.Clear) {
+							menu.AddSeparator("Colorize/");
+						}
+
+						menu.AddItem(new GUIContent($"Colorize/{ObjectNames.NicifyVariableName(colorValue.ToString())}"), false, OnColorizeOption, MakeKVP(colorValue, sceneEntry.Path));
+					}
+					continue;
+				}
+
+				menu.AddItem(new GUIContent(ObjectNames.NicifyVariableName(value.ToString())), false, OnSelectPinnedOption, MakeKVP(value, index));
 			}
 
 			menu.ShowAsContext();
@@ -1284,7 +1315,25 @@ namespace DevLocker.Tools.AssetManagement
 			int index = m_Scenes.IndexOf(sceneEntry);
 
 			foreach (UnpinnedOptions value in Enum.GetValues(typeof(UnpinnedOptions))) {
-				menu.AddItem(new GUIContent(ObjectNames.NicifyVariableName(value.ToString())), false, OnSelectUnpinnedOption, new KeyValuePair<UnpinnedOptions, int>(value, index));
+
+				if (value == UnpinnedOptions.Exclude) {
+					menu.AddItem(new GUIContent($"Exclude/Exclude Scene"), false, OnExcludeOption, sceneEntry.Path);
+					menu.AddItem(new GUIContent($"Exclude/Exclude Folder"), false, OnExcludeOption, Path.GetDirectoryName(sceneEntry.Path).Replace("\\", "/"));
+					continue;
+				}
+
+				if (value == UnpinnedOptions.Colorize) {
+					foreach (ColorizeOptions colorValue in Enum.GetValues(typeof(ColorizeOptions))) {
+						if (colorValue == ColorizeOptions.Clear) {
+							menu.AddSeparator("Colorize/");
+						}
+
+						menu.AddItem(new GUIContent($"Colorize/{ObjectNames.NicifyVariableName(colorValue.ToString())}"), false, OnColorizeOption, MakeKVP(colorValue, sceneEntry.Path));
+					}
+					continue;
+				}
+
+				menu.AddItem(new GUIContent(ObjectNames.NicifyVariableName(value.ToString())), false, OnSelectUnpinnedOption, MakeKVP(value, index));
 			}
 
 			menu.ShowAsContext();
@@ -1316,18 +1365,6 @@ namespace DevLocker.Tools.AssetManagement
 
 				case PinnedOptions.CopyAssetPath:
 					EditorGUIUtility.systemCopyBuffer = m_Pinned[index].Path;
-					break;
-
-				case PinnedOptions.ExcludeScene:
-					m_PersonalPrefs.Exclude.Add(m_Pinned[index].Path);
-					StorePersonalPrefs();
-					AssetsChanged = true;
-					break;
-
-				case PinnedOptions.ExcludeFolder:
-					m_PersonalPrefs.Exclude.Add(Path.GetDirectoryName(m_Pinned[index].Path).Replace("\\", "/"));
-					StorePersonalPrefs();
-					AssetsChanged = true;
 					break;
 
 				case PinnedOptions.MoveFirst:
@@ -1392,18 +1429,6 @@ namespace DevLocker.Tools.AssetManagement
 					EditorGUIUtility.systemCopyBuffer = m_Scenes[index].Path;
 					break;
 
-				case UnpinnedOptions.ExcludeScene:
-					m_PersonalPrefs.Exclude.Add(m_Scenes[index].Path);
-					StorePersonalPrefs();
-					AssetsChanged = true;
-					break;
-
-				case UnpinnedOptions.ExcludeFolder:
-					m_PersonalPrefs.Exclude.Add(Path.GetDirectoryName(m_Scenes[index].Path).Replace("\\", "/"));
-					StorePersonalPrefs();
-					AssetsChanged = true;
-					break;
-
 				case UnpinnedOptions.MoveFirst:
 					m_Scenes.Insert(0, m_Scenes[index]);
 					m_Scenes.RemoveAt(index + 1);
@@ -1436,6 +1461,104 @@ namespace DevLocker.Tools.AssetManagement
 			SynchronizeInstancesToMe();
 
 			Repaint();
+		}
+
+		private void OnExcludeOption(object data)
+		{
+			m_PersonalPrefs.Exclude.Add((string)data);
+			StorePersonalPrefs();
+			AssetsChanged = true;
+		}
+
+		private void OnColorizeOption(object data)
+		{
+			var pair = (KeyValuePair<ColorizeOptions, string>)data;
+			string path = pair.Value;
+
+			//int choice = EditorUtility.DisplayDialogComplex("Colorize target", "Colorize scene or entire folder that the scene is in?", "Scene only", "Cancel", "Entire Folder");
+			//if (choice == 2)
+			//	return;
+
+			ColorizePattern pattern = m_PersonalPrefs.ColorizePatterns.FirstOrDefault(cp => cp.Patterns.Contains(path));
+			if (pattern == null) {
+				path = Path.GetDirectoryName(path);
+				pattern = m_PersonalPrefs.ColorizePatterns.FirstOrDefault(cp => cp.Patterns.Contains(path));
+			}
+
+			Color backgroundColor = Color.white;
+			Color textColor = Color.black;
+
+			switch(pair.Key) {
+				case ColorizeOptions.Red:
+					backgroundColor = new Color(0.8f, 0.4745f, 0.4745f);
+					textColor = Color.white;
+					break;
+
+				case ColorizeOptions.Green:
+					backgroundColor = new Color(0.3817f, 0.649f, 0.3945f);
+					textColor = Color.white;
+					break;
+
+				case ColorizeOptions.Blue:
+					backgroundColor = new Color(0.3875f, 0.6648f, 0.711f);
+					textColor = Color.white;
+					break;
+
+				case ColorizeOptions.Orange:
+					backgroundColor = new Color(0.875f, 0.656f, 0.409f);
+					textColor = Color.white;
+					break;
+
+				case ColorizeOptions.Yellow:
+					backgroundColor = new Color(0.734f, 0.7267f, 0.2725f);
+					textColor = Color.white;
+					break;
+
+				case ColorizeOptions.Brown:
+					backgroundColor = new Color(0.7529f, 0.6431f, 0.4392f);
+					textColor = Color.white;
+					break;
+
+				case ColorizeOptions.Purple:
+					backgroundColor = new Color(0.647f, 0.38f, 0.5888f);
+					textColor = Color.white;
+					break;
+
+				case ColorizeOptions.Clear:
+					if (pattern == null)
+						return;
+
+					m_PersonalPrefs.ColorizePatterns.Remove(pattern);
+					break;
+
+				case ColorizeOptions.Custom:
+					m_ShowPreferences = true;
+					Repaint();
+					return;
+
+				default:
+					throw new ArgumentException(pair.Key.ToString());
+
+			}
+
+
+			if (pattern == null) {
+				pattern = new ColorizePattern() {
+					Patterns = pair.Value,	// NOTE: use the original path if newly created.
+					BackgroundColor = Color.white,
+					TextColor = Color.black,
+				};
+				m_PersonalPrefs.ColorizePatterns.Add(pattern);
+				EditorUtility.SetDirty(this);
+			}
+
+			pattern.BackgroundColor = backgroundColor;
+			pattern.TextColor = textColor;
+
+			RefreshColorizePatterns(m_Scenes);
+			RefreshColorizePatterns(m_Pinned);
+
+			StorePersonalPrefs();
 		}
 
 		private void PlaySceneDirectly(SceneEntry sceneEntry)
@@ -1795,6 +1918,11 @@ namespace DevLocker.Tools.AssetManagement
 			}
 
 			return false;
+		}
+
+		private static KeyValuePair<TKey, TValue> MakeKVP<TKey, TValue>(TKey key, TValue value)
+		{
+			return new KeyValuePair<TKey, TValue>(key, value);
 		}
 	}
 
