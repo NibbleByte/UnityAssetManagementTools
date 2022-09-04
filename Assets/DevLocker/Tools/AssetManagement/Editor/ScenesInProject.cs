@@ -700,7 +700,7 @@ namespace DevLocker.Tools.AssetManagement
 			SceneButtonStyle.alignment = TextAnchor.MiddleLeft;
 			SceneButtonStyle.padding.left = 10;
 
-			SceneButtonHeight = EditorGUIUtility.singleLineHeight + SceneButtonStyle.margin.top + SceneButtonStyle.margin.bottom - 1;
+			SceneButtonHeight = EditorGUIUtility.singleLineHeight + SceneButtonStyle.margin.top + SceneButtonStyle.margin.bottom;
 
 			SceneOptionsButtonStyle = new GUIStyle(GUI.skin.button);
 			SceneOptionsButtonStyle.alignment = TextAnchor.MiddleCenter;
@@ -1058,7 +1058,7 @@ namespace DevLocker.Tools.AssetManagement
 		private float CalcPinnedViewStartY()
 		{
 			// Calculate pinned scroll view layout.
-			const float LINE_PADDING = 6;
+			const float LINE_PADDING = 4;
 			float LINE_HEIGHT = EditorGUIUtility.singleLineHeight + LINE_PADDING;
 
 			return LINE_HEIGHT * 2;
@@ -1084,6 +1084,9 @@ namespace DevLocker.Tools.AssetManagement
 			m_SplitterRect.x = (position.width - m_SplitterRect.width) / 2f;
 
 			GUI.Box(m_SplitterRect, "- - - - - - -", SplitterStyle);
+#if UNITY_2019_1_OR_NEWER
+			EditorGUILayout.Space();	// Looks better for newer Unity version.
+#endif
 			//GUI.DrawTexture(m_SplitterRect, EditorGUIUtility.whiteTexture);
 			EditorGUIUtility.AddCursorRect(m_SplitterRect, MouseCursor.ResizeVertical);
 
