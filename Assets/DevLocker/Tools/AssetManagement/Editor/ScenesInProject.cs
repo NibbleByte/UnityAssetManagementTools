@@ -25,19 +25,7 @@ namespace DevLocker.Tools.AssetManagement
 	{
 		#region Types definitions
 
-		private enum PinnedOptions
-		{
-			Unpin,
-			CopyAssetPath,
-			Colorize,
-			Exclude,
-			MoveFirst,
-			MoveLast,
-			ShowInExplorer,
-			ShowInProject,
-		}
-
-		private enum UnpinnedOptions
+		private enum SceneOptions
 		{
 			Pin,
 			CopyAssetPath,
@@ -1244,11 +1232,7 @@ namespace DevLocker.Tools.AssetManagement
 
 
 			if (optionsPressed) {
-				if (isPinned) {
-					ShowPinnedOptions(sceneEntry);
-				} else {
-					ShowUnpinnedOptions(sceneEntry);
-				}
+				ShowSceneOptions(isPinned, sceneEntry);
 			}
 
 			if (playPressed) {
@@ -1279,20 +1263,20 @@ namespace DevLocker.Tools.AssetManagement
 			EditorGUILayout.EndHorizontal();
 		}
 
-		private void ShowPinnedOptions(SceneEntry sceneEntry)
+		private void ShowSceneOptions(bool isPinned, SceneEntry sceneEntry)
 		{
 			var menu = new GenericMenu();
-			int index = m_Pinned.IndexOf(sceneEntry);
+			int index = isPinned ? m_Pinned.IndexOf(sceneEntry) : m_Scenes.IndexOf(sceneEntry);
 
-			foreach (PinnedOptions value in Enum.GetValues(typeof(PinnedOptions))) {
+			foreach (SceneOptions value in Enum.GetValues(typeof(SceneOptions))) {
 
-				if (value == PinnedOptions.Exclude) {
+				if (value == SceneOptions.Exclude) {
 					menu.AddItem(new GUIContent($"Exclude/Exclude Scene"), false, OnExcludeOption, sceneEntry.Path);
 					menu.AddItem(new GUIContent($"Exclude/Exclude Folder"), false, OnExcludeOption, Path.GetDirectoryName(sceneEntry.Path).Replace("\\", "/"));
 					continue;
 				}
 
-				if (value == PinnedOptions.Colorize) {
+				if (value == SceneOptions.Colorize) {
 					foreach (ColorizeOptions colorValue in Enum.GetValues(typeof(ColorizeOptions))) {
 						if (colorValue == ColorizeOptions.Clear) {
 							menu.AddSeparator("Colorize/");
@@ -1303,37 +1287,13 @@ namespace DevLocker.Tools.AssetManagement
 					continue;
 				}
 
-				menu.AddItem(new GUIContent(ObjectNames.NicifyVariableName(value.ToString())), false, OnSelectPinnedOption, MakeKVP(value, index));
-			}
-
-			menu.ShowAsContext();
-		}
-
-		private void ShowUnpinnedOptions(SceneEntry sceneEntry)
-		{
-			var menu = new GenericMenu();
-			int index = m_Scenes.IndexOf(sceneEntry);
-
-			foreach (UnpinnedOptions value in Enum.GetValues(typeof(UnpinnedOptions))) {
-
-				if (value == UnpinnedOptions.Exclude) {
-					menu.AddItem(new GUIContent($"Exclude/Exclude Scene"), false, OnExcludeOption, sceneEntry.Path);
-					menu.AddItem(new GUIContent($"Exclude/Exclude Folder"), false, OnExcludeOption, Path.GetDirectoryName(sceneEntry.Path).Replace("\\", "/"));
-					continue;
+				string menuName = ObjectNames.NicifyVariableName(value.ToString());
+				if (value == SceneOptions.Pin && isPinned) {
+					menuName = "Unpin";
 				}
 
-				if (value == UnpinnedOptions.Colorize) {
-					foreach (ColorizeOptions colorValue in Enum.GetValues(typeof(ColorizeOptions))) {
-						if (colorValue == ColorizeOptions.Clear) {
-							menu.AddSeparator("Colorize/");
-						}
-
-						menu.AddItem(new GUIContent($"Colorize/{ObjectNames.NicifyVariableName(colorValue.ToString())}"), false, OnColorizeOption, MakeKVP(colorValue, sceneEntry.Path));
-					}
-					continue;
-				}
-
-				menu.AddItem(new GUIContent(ObjectNames.NicifyVariableName(value.ToString())), false, OnSelectUnpinnedOption, MakeKVP(value, index));
+				var handler = isPinned ? (GenericMenu.MenuFunction2) OnSelectPinnedOption : OnSelectUnpinnedOption;
+				menu.AddItem(new GUIContent(menuName), false, handler, MakeKVP(value, index));
 			}
 
 			menu.ShowAsContext();
@@ -1341,14 +1301,14 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void OnSelectPinnedOption(object data)
 		{
-			var pair = (KeyValuePair<PinnedOptions, int>)data;
+			var pair = (KeyValuePair<SceneOptions, int>)data;
 			int index = pair.Value;
 
 			bool shouldAutoSnapSplitter = false;
 
 			switch (pair.Key) {
 
-				case PinnedOptions.Unpin:
+				case SceneOptions.Pin:
 					shouldAutoSnapSplitter = ShouldAutoSnapSplitter();
 
 					var sceneEntry = m_Pinned[index];
@@ -1363,25 +1323,25 @@ namespace DevLocker.Tools.AssetManagement
 
 					break;
 
-				case PinnedOptions.CopyAssetPath:
-					EditorGUIUtility.systemCopyBuffer = m_Pinned[index].Path;
-					break;
-
-				case PinnedOptions.MoveFirst:
+				case SceneOptions.MoveFirst:
 					m_Pinned.Insert(0, m_Pinned[index]);
 					m_Pinned.RemoveAt(index + 1);
 					break;
 
-				case PinnedOptions.MoveLast:
+				case SceneOptions.MoveLast:
 					m_Pinned.Add(m_Pinned[index]);
 					m_Pinned.RemoveAt(index);
 					break;
 
-				case PinnedOptions.ShowInExplorer:
+				case SceneOptions.CopyAssetPath:
+					EditorGUIUtility.systemCopyBuffer = m_Pinned[index].Path;
+					return;
+
+				case SceneOptions.ShowInExplorer:
 					EditorUtility.RevealInFinder(m_Pinned[index].Path);
 					return;
 
-				case PinnedOptions.ShowInProject:
+				case SceneOptions.ShowInProject:
 					EditorGUIUtility.PingObject(AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(m_Pinned[index].Path));
 					return;
 			}
@@ -1403,14 +1363,14 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void OnSelectUnpinnedOption(object data)
 		{
-			var pair = (KeyValuePair<UnpinnedOptions, int>)data;
+			var pair = (KeyValuePair<SceneOptions, int>)data;
 			int index = pair.Value;
 
 			bool shouldAutoSnapSplitter = false;
 
 			switch (pair.Key) {
 
-				case UnpinnedOptions.Pin:
+				case SceneOptions.Pin:
 					shouldAutoSnapSplitter = ShouldAutoSnapSplitter();
 
 					var sceneEntry = m_Scenes[index];
@@ -1425,25 +1385,25 @@ namespace DevLocker.Tools.AssetManagement
 
 					break;
 
-				case UnpinnedOptions.CopyAssetPath:
-					EditorGUIUtility.systemCopyBuffer = m_Scenes[index].Path;
-					break;
-
-				case UnpinnedOptions.MoveFirst:
+				case SceneOptions.MoveFirst:
 					m_Scenes.Insert(0, m_Scenes[index]);
 					m_Scenes.RemoveAt(index + 1);
 					break;
 
-				case UnpinnedOptions.MoveLast:
+				case SceneOptions.MoveLast:
 					m_Scenes.Add(m_Scenes[index]);
 					m_Scenes.RemoveAt(index);
 					break;
 
-				case UnpinnedOptions.ShowInExplorer:
+				case SceneOptions.CopyAssetPath:
+					EditorGUIUtility.systemCopyBuffer = m_Scenes[index].Path;
+					return;
+
+				case SceneOptions.ShowInExplorer:
 					EditorUtility.RevealInFinder(m_Scenes[index].Path);
 					return;
 
-				case UnpinnedOptions.ShowInProject:
+				case SceneOptions.ShowInProject:
 					EditorGUIUtility.PingObject(AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(m_Scenes[index].Path));
 					return;
 			}
