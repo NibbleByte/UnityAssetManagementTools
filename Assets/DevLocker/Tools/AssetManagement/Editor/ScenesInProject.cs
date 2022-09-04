@@ -1174,7 +1174,7 @@ namespace DevLocker.Tools.AssetManagement
 			if (sceneEntry.ColorizePattern != null && !string.IsNullOrEmpty(sceneEntry.ColorizePattern.Patterns)) {
 				GUI.backgroundColor = sceneEntry.ColorizePattern.BackgroundColor;
 				if (EditorGUIUtility.isProSkin) {
-					GUI.backgroundColor = GUI.backgroundColor + new Color(0.3f, 0.3f, 0.3f);
+					GUI.backgroundColor = GUI.backgroundColor + new Color(0.4f, 0.4f, 0.4f);
 				}
 
 				SceneButtonStyle.normal.textColor
@@ -1546,6 +1546,13 @@ namespace DevLocker.Tools.AssetManagement
 
 							if (!choice)
 								return;
+						} else {
+							colorPattern = GetMatchedColorPattern(scenePath, m_ProjectPrefs.ColorizePatterns);
+							EditorUtility.DisplayDialog(
+								"Clear Scene Colorization",
+								$"Selected scene is included in a project-wide colorize pattern:\n\"{colorPattern.Patterns}\"\nDiscuss this with your team, then change the pattern in the project preferences.",
+								"Ok"
+								);
 						}
 					}
 
@@ -1577,7 +1584,7 @@ namespace DevLocker.Tools.AssetManagement
 				if (colorPattern != null) {
 					int choice = EditorUtility.DisplayDialogComplex(
 						"Colorize scene",
-						$"Selected scene is included in another colorize pattern:\n\"{colorPattern.Patterns}\"\nDo you want to colorize the selected scene or change the original pattern colors?",
+						$"Selected scene is included in another colorize pattern:\n\"{colorPattern.Patterns}\"\nDo you want to colorize ONLY the selected scene or change the original pattern colors?",
 						"Scene only", "Cancel", "Original folder pattern"
 						);
 					if (choice == 1)
