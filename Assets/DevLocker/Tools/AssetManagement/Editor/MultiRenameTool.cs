@@ -216,29 +216,29 @@ namespace DevLocker.Tools.AssetManagement
 				EditorGUI.EndDisabledGroup();
 			}
 
-			EditorGUILayout.BeginHorizontal();
 			{
-				EditorGUILayout.BeginVertical();
-
 				EditorGUI.BeginDisabledGroup(!_searchPatternEnabled);
 				var labelContent = new GUIContent("Search Pattern", "Searched text in the objects' names.\nDisable to match any names.");
 				_searchPattern = TextFieldWithPlaceholder(labelContent, _searchPattern, _useCounters ? "Use \\d to match any numbers..." : "");
 				EditorGUI.EndDisabledGroup();
 
+				Rect rect = GUILayoutUtility.GetLastRect();
+				rect.x += EditorGUIUtility.labelWidth - 18f;
+				_searchPatternEnabled = EditorGUI.Toggle(rect, _searchPatternEnabled);
+
+			}
+
+			{
 				EditorGUI.BeginDisabledGroup(!_replacePatternEnabled);
-				labelContent = new GUIContent("Replace Pattern", "Replace the searched part of the objects' names.\nDisable to leave final names untouched. Useful with prefix / suffix.");
+				var labelContent = new GUIContent("Replace Pattern", "Replace the searched part of the objects' names.\nDisable to leave final names untouched. Useful with prefix / suffix.");
 				_replacePattern = TextFieldWithPlaceholder(labelContent, _replacePattern, _useCounters ? "Use \\d to insert number..." : "");
 				EditorGUI.EndDisabledGroup();
 
-				EditorGUILayout.EndVertical();
-
-				EditorGUILayout.BeginVertical(GUILayout.Width(16));
-				_searchPatternEnabled = EditorGUILayout.Toggle(_searchPatternEnabled, GUILayout.Width(16));
-				_replacePatternEnabled = EditorGUILayout.Toggle(_replacePatternEnabled, GUILayout.Width(16));
-				EditorGUILayout.EndVertical();
-
+				Rect rect = GUILayoutUtility.GetLastRect();
+				rect.x += EditorGUIUtility.labelWidth - 18f;
+				_replacePatternEnabled = EditorGUI.Toggle(rect, _replacePatternEnabled);
 			}
-			EditorGUILayout.EndHorizontal();
+
 
 			EditorGUILayout.BeginHorizontal();
 			EditorGUILayout.LabelField("Prefix / Suffix", GUILayout.Width(EditorGUIUtility.labelWidth - 4f));
