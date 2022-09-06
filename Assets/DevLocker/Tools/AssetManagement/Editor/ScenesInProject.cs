@@ -122,7 +122,7 @@ namespace DevLocker.Tools.AssetManagement
 		[Serializable]
 		private class ColorizePattern
 		{
-			[Tooltip("Relative path (contains '/') or name match. Can have multiple patterns separated by ';'.")]
+			[Tooltip("Relative path (contains '/') or name match.\nCan have multiple patterns separated by ';'.\nAppend '|' then guid to track the assets when renamed.")]
 			public string Patterns = string.Empty;
 			public Color BackgroundColor = Color.black;
 			public Color TextColor = Color.white;
@@ -402,6 +402,67 @@ namespace DevLocker.Tools.AssetManagement
 			}
 		}
 
+		private bool UpdatePreferenceLists()
+		{
+			bool hasChanged = false;
+
+			// Update paths from guids.
+			for(int i = m_PersonalPrefs.ColorizePatterns.Count - 1; i >= 0; i--) {
+
+				// NOTE: skipping ';' splits. Don't care enough about it...
+				ColorizePattern colors = m_PersonalPrefs.ColorizePatterns[i];
+
+				bool isPath = colors.Patterns.Contains("/");
+
+				// Find best match for this scene entry.
+				if (isPath) {
+
+					int guidSeparatorIndex = colors.Patterns.LastIndexOf('|');
+					if (guidSeparatorIndex != -1) {
+						string patternPath = colors.Patterns.Substring(0, guidSeparatorIndex);
+						string patternGuid = colors.Patterns.Substring(guidSeparatorIndex + 1);
+						string foundPath = AssetDatabase.GUIDToAssetPath(patternGuid);
+
+						if (string.IsNullOrEmpty(foundPath)) {
+							m_PersonalPrefs.ColorizePatterns.RemoveAt(i);
+							hasChanged = true;
+							continue;
+						}
+
+						if (foundPath != patternPath) {
+							colors.Patterns = colors.Patterns.Replace(patternPath, foundPath);
+							hasChanged = true;
+						}
+					}
+				}
+			}
+
+			// Update paths from guids.
+			for(int i = m_PersonalPrefs.Exclude.Count - 1; i >= 0 ; i--) {
+				string exclude = m_PersonalPrefs.Exclude[i];
+
+				int guidSeparatorIndex = exclude.LastIndexOf('|');
+				if (guidSeparatorIndex != -1) {
+					string patternPath = exclude.Substring(0, guidSeparatorIndex);
+					string patternGuid = exclude.Substring(guidSeparatorIndex + 1);
+					string foundPath = AssetDatabase.GUIDToAssetPath(patternGuid);
+
+					if (string.IsNullOrEmpty(foundPath)) {
+						m_PersonalPrefs.Exclude.RemoveAt(i);
+						hasChanged = true;
+						continue;
+					}
+
+					if (foundPath != patternPath) {
+						m_PersonalPrefs.Exclude[i] = exclude.Replace(patternPath, foundPath);
+						hasChanged = true;
+					}
+				}
+			}
+
+			return hasChanged;
+		}
+
 		private bool UpdateScenesList(List<SceneEntry> list, HashSet<string> knownGuids)
 		{
 			bool hasChanged = false;
@@ -436,7 +497,7 @@ namespace DevLocker.Tools.AssetManagement
 					continue;
 				}
 
-				if (ShouldExclude(m_ProjectPrefs.Exclude.Concat(m_PersonalPrefs.Exclude), entry.Path)) {
+				if (ShouldExclude(entry.Guid, entry.Path, m_ProjectPrefs.Exclude.Concat(m_PersonalPrefs.Exclude))) {
 					list.RemoveAt(i);
 					hasChanged = true;
 					continue;
@@ -590,14 +651,16 @@ namespace DevLocker.Tools.AssetManagement
 			var splitters = new char[] { ';' };
 
 			foreach(var sceneEntry in list) {
-				sceneEntry.ColorizePattern = GetMatchedColorPattern(sceneEntry.Path, m_ProjectPrefs.ColorizePatterns.Concat(m_PersonalPrefs.ColorizePatterns));
+				sceneEntry.ColorizePattern = GetMatchedColorPattern(sceneEntry.Guid, sceneEntry.Path, m_ProjectPrefs.ColorizePatterns.Concat(m_PersonalPrefs.ColorizePatterns));
 			}
 		}
 
-		private static ColorizePattern GetMatchedColorPattern(string scenePath, IEnumerable<ColorizePattern> colorPatterns)
+		private static ColorizePattern GetMatchedColorPattern(string guid, string scenePath, IEnumerable<ColorizePattern> colorPatterns)
 		{
 			var splitters = new char[] { ';' };
 			string sceneName = Path.GetFileNameWithoutExtension(scenePath);
+
+			bool matchedByName = false;
 
 			ColorizePattern colorPattern = null;
 
@@ -611,7 +674,20 @@ namespace DevLocker.Tools.AssetManagement
 
 					// Find best match for this scene entry.
 					if (isPath) {
-						if (scenePath.StartsWith(pattern, StringComparison.OrdinalIgnoreCase)) {
+
+						int guidSeparatorIndex = pattern.LastIndexOf('|');
+						if (guidSeparatorIndex != -1) {
+							string patternGuid = pattern.Substring(guidSeparatorIndex + 1);
+							if (guid == patternGuid) {
+								// This is always preferred to path or name.
+								return colors;
+							}
+						} else {
+							guidSeparatorIndex = pattern.Length;
+						}
+
+						// If this is colorized dir, match without the guid part.
+						if (!matchedByName && scenePath.StartsWith(pattern.Substring(0, guidSeparatorIndex), StringComparison.OrdinalIgnoreCase)) {
 
 							var prevPattern = colorPattern?.Patterns ?? string.Empty;
 
@@ -622,16 +698,14 @@ namespace DevLocker.Tools.AssetManagement
 							if (colorPattern == null || betterPath) {
 								colorPattern = colors;
 							}
-
-							break;
 						}
 
 					} else {
 
-						// This is always preferred to path.
-						if (sceneName.IndexOf(pattern, StringComparison.OrdinalIgnoreCase) != -1) {
+						// This is preferred to path, but not to guid.
+						if (!matchedByName && sceneName.IndexOf(pattern, StringComparison.OrdinalIgnoreCase) != -1) {
 							colorPattern = colors;
-							break;
+							matchedByName = true;
 						}
 					}
 				}
@@ -722,6 +796,10 @@ namespace DevLocker.Tools.AssetManagement
 				LoadData();
 			}
 
+			if (UpdatePreferenceLists()) {
+				StorePersonalPrefs();
+			}
+
 			var knownGuids = new HashSet<string>();
 			bool hasChanges = UpdateScenesList(m_Scenes, knownGuids);
 			hasChanges = UpdateScenesList(m_Pinned, knownGuids) || hasChanges;
@@ -737,7 +815,7 @@ namespace DevLocker.Tools.AssetManagement
 
 				string scenePath = AssetDatabase.GUIDToAssetPath(guid);
 
-				if (ShouldExclude(m_ProjectPrefs.Exclude.Concat(m_PersonalPrefs.Exclude), scenePath))
+				if (ShouldExclude(guid, scenePath, m_ProjectPrefs.Exclude.Concat(m_PersonalPrefs.Exclude)))
 					continue;
 
 				m_Scenes.Add(new SceneEntry(guid, scenePath));
@@ -1543,7 +1621,9 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void OnExcludeOption(object data)
 		{
-			m_PersonalPrefs.Exclude.Add((string)data);
+			string scenePath = (string)data;
+			string guid = AssetDatabase.AssetPathToGUID(scenePath);
+			m_PersonalPrefs.Exclude.Add(scenePath + "|" + guid);
 			StorePersonalPrefs();
 			AssetsChanged = true;
 		}
@@ -1552,6 +1632,7 @@ namespace DevLocker.Tools.AssetManagement
 		{
 			var pair = (KeyValuePair<ColorizeOptions, string>)data;
 			string scenePath = pair.Value;
+			string guid = AssetDatabase.AssetPathToGUID(scenePath);
 
 			ColorizePattern colorPattern;
 
@@ -1599,7 +1680,7 @@ namespace DevLocker.Tools.AssetManagement
 					colorPattern = m_PersonalPrefs.ColorizePatterns.FirstOrDefault(cp => cp.Patterns.Contains(scenePath));
 
 					if (colorPattern == null) {
-						colorPattern = GetMatchedColorPattern(scenePath, m_PersonalPrefs.ColorizePatterns);
+						colorPattern = GetMatchedColorPattern(guid, scenePath, m_PersonalPrefs.ColorizePatterns);
 
 						if (colorPattern != null) {
 							bool choice = EditorUtility.DisplayDialog(
@@ -1611,7 +1692,7 @@ namespace DevLocker.Tools.AssetManagement
 							if (!choice)
 								return;
 						} else {
-							colorPattern = GetMatchedColorPattern(scenePath, m_ProjectPrefs.ColorizePatterns);
+							colorPattern = GetMatchedColorPattern(guid, scenePath, m_ProjectPrefs.ColorizePatterns);
 							EditorUtility.DisplayDialog(
 								"Clear Scene Colorization",
 								$"Selected scene is included in a project-wide colorize pattern:\n\"{colorPattern.Patterns}\"\nDiscuss this with your team, then change the pattern in the project preferences.",
@@ -1645,7 +1726,7 @@ namespace DevLocker.Tools.AssetManagement
 			colorPattern = m_PersonalPrefs.ColorizePatterns.FirstOrDefault(cp => cp.Patterns.Contains(scenePath));
 
 			if (colorPattern == null) {
-				colorPattern = GetMatchedColorPattern(scenePath, m_PersonalPrefs.ColorizePatterns);
+				colorPattern = GetMatchedColorPattern(guid, scenePath, m_PersonalPrefs.ColorizePatterns);
 
 				if (colorPattern != null) {
 					int choice = EditorUtility.DisplayDialogComplex(
@@ -1663,7 +1744,7 @@ namespace DevLocker.Tools.AssetManagement
 
 				if (colorPattern == null) {
 					colorPattern = new ColorizePattern() {
-						Patterns = scenePath,	// NOTE: use the original path if newly created.
+						Patterns = scenePath + "|" + guid,	// NOTE: use the original path if newly created.
 						BackgroundColor = Color.white,
 						TextColor = Color.black,
 					};
@@ -1822,7 +1903,7 @@ namespace DevLocker.Tools.AssetManagement
 		}
 
 		private readonly GUIContent PreferencesColorizePatternsLabelContent = new GUIContent("Colorize Entries", "Set colors of scenes based on a folder or name patterns.");
-		private readonly GUIContent PreferencesExcludePatternsLabelContent = new GUIContent("Exclude Scenes", "Relative path (contains '/') or asset name to be ignored.");
+		private readonly GUIContent PreferencesExcludePatternsLabelContent = new GUIContent("Exclude Scenes", "Relative path (contains '/') or asset name to be ignored.\nAppend '|' then guid to track the assets when renamed.");
 		private Vector2 m_PreferencesScroll;
 
 		private PreferencesTab m_SelectedTab = PreferencesTab.Personal;
@@ -2023,14 +2104,27 @@ namespace DevLocker.Tools.AssetManagement
 		}
 
 		// NOTE: Copy pasted from SearchAssetsFilter.
-		private static bool ShouldExclude(IEnumerable<string> excludes, string path)
+		private static bool ShouldExclude(string guid, string path, IEnumerable<string> excludes)
 		{
 			foreach(var exclude in excludes) {
 
 				bool isExcludePath = exclude.Contains('/');    // Check if this is a path or just a filename
 
 				if (isExcludePath) {
-					if (path.StartsWith(exclude, StringComparison.OrdinalIgnoreCase))
+					// NOTE: excluded dirs can also have guids and will be tracked.
+
+					int guidSeparatorIndex = exclude.LastIndexOf('|');
+					if (guidSeparatorIndex != -1) {
+						string patternGuid = exclude.Substring(guidSeparatorIndex + 1);
+						if (guid == patternGuid) {
+							return true;
+						}
+					} else {
+						guidSeparatorIndex = exclude.Length;
+					}
+
+					// If this is excluded dir, match without the guid part.
+					if (path.StartsWith(exclude.Substring(0, guidSeparatorIndex), StringComparison.OrdinalIgnoreCase))
 						return true;
 
 				} else {
