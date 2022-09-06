@@ -84,14 +84,15 @@ namespace DevLocker.Tools.AssetManagement
 		private class SceneEntry
 		{
 			public SceneEntry() { }
-			public SceneEntry(string path)
+			public SceneEntry(string guid, string path)
 			{
 				Path = path;
-				Name = System.IO.Path.GetFileNameWithoutExtension(Path);
-				Folder = Path.Substring(0, Path.LastIndexOf('/'));
+				Guid = guid;
+				RefreshDetails();
 			}
 
 			public string Path;
+			public string Guid;
 			public string Name;
 			public string Folder;
 			public string DisplayName;
@@ -99,9 +100,16 @@ namespace DevLocker.Tools.AssetManagement
 
 			public ColorizePattern ColorizePattern;
 
+			public void RefreshDetails()
+			{
+				Name = string.IsNullOrEmpty(Path) ? "" : System.IO.Path.GetFileNameWithoutExtension(Path);
+				Folder = string.IsNullOrEmpty(Path) ? "" : Path.Substring(0, Path.LastIndexOf('/'));
+			}
+
 			public SceneEntry Clone()
 			{
 				var clone = (SceneEntry) MemberwiseClone();
+				clone.ColorizePattern = ColorizePattern?.Clone();
 				return clone;
 			}
 
@@ -118,6 +126,11 @@ namespace DevLocker.Tools.AssetManagement
 			public string Patterns = string.Empty;
 			public Color BackgroundColor = Color.black;
 			public Color TextColor = Color.white;
+
+			public ColorizePattern Clone()
+			{
+				return (ColorizePattern) MemberwiseClone();
+			}
 		}
 
 		[Serializable]
@@ -322,8 +335,11 @@ namespace DevLocker.Tools.AssetManagement
 						hasChanged = true;
 
 					} else if (!m_Pinned.Any(e => e.Path == path)) {
-						m_Pinned.Add(new SceneEntry(path));
-						hasChanged = true;
+						string guid = AssetDatabase.AssetPathToGUID(path);
+						if (!string.IsNullOrEmpty(guid)) {
+							m_Pinned.Add(new SceneEntry(guid, path));
+							hasChanged = true;
+						}
 					}
 				}
 
@@ -341,7 +357,8 @@ namespace DevLocker.Tools.AssetManagement
 				m_Scenes.RemoveAll(e => preferencesList.Contains(e.Path));
 				var toInsert = preferencesList
 					.Where(p => m_Pinned.FindIndex(e => e.Path == p) == -1)
-					.Select(p => new SceneEntry(p));
+					.Select(p => new SceneEntry(AssetDatabase.GUIDToAssetPath(p), p))
+					.Where(e => !string.IsNullOrEmpty(e.Guid));
 				m_Scenes.InsertRange(0, toInsert);
 				hasChanged = true;
 
@@ -355,8 +372,8 @@ namespace DevLocker.Tools.AssetManagement
 		private void StoreAllScenes()
 		{
 			try {
-				File.WriteAllLines(SettingsPathPinnedScenes, m_Pinned.Select(e => e.Path));
-				File.WriteAllLines(SettingsPathScenes, m_Scenes.Select(e => e.Path));
+				File.WriteAllLines(SettingsPathPinnedScenes, m_Pinned.Select(e => e.Path + "|" + e.Guid));
+				File.WriteAllLines(SettingsPathScenes, m_Scenes.Select(e => e.Path + "|" + e.Guid));
 			}
 			catch (Exception ex) {
 				Debug.LogException(ex);
@@ -385,19 +402,50 @@ namespace DevLocker.Tools.AssetManagement
 			}
 		}
 
-		private static bool RemoveRedundant(List<SceneEntry> list, List<string> scenesInDB)
+		private bool UpdateScenesList(List<SceneEntry> list, HashSet<string> knownGuids)
 		{
-			bool removeSuccessful = false;
+			bool hasChanged = false;
 
 			for (int i = list.Count - 1; i >= 0; i--) {
-				int sceneIndex = scenesInDB.IndexOf(list[i].Path);
-				if (sceneIndex == -1) {
-					list.RemoveAt(i);
-					removeSuccessful = true;
+				SceneEntry entry = list[i];
+
+				// LEGACY: initially only paths were stored, no guids.
+				if (string.IsNullOrEmpty(entry.Guid)) {
+					entry.Guid = AssetDatabase.AssetPathToGUID(entry.Path);
+					hasChanged = true;
+
+				} else {
+					// Update the path in case it changed.
+
+					// Because deleted assets keep their guid-to-path mapping until Unity is restarted.
+					string foundPath = AssetDatabase.GUIDToAssetPath(entry.Guid);
+					if (!string.IsNullOrEmpty(foundPath) && !File.Exists(foundPath)) {
+						foundPath = "";
+					}
+
+					if (entry.Path != foundPath) {
+						entry.Path = foundPath;
+						entry.RefreshDetails();
+						hasChanged = true;
+					}
 				}
+
+				if (string.IsNullOrEmpty(entry.Guid) || string.IsNullOrEmpty(entry.Path)) {
+					list.RemoveAt(i);
+					hasChanged = true;
+					continue;
+				}
+
+				if (ShouldExclude(m_ProjectPrefs.Exclude.Concat(m_PersonalPrefs.Exclude), entry.Path)) {
+					list.RemoveAt(i);
+					hasChanged = true;
+					continue;
+				}
+
+				knownGuids.Add(entry.Guid);
 			}
 
-			return removeSuccessful;
+			return hasChanged;
 		}
 
 		private static void SortScenes(List<SceneEntry> list, SortType sortType)
@@ -635,16 +683,36 @@ namespace DevLocker.Tools.AssetManagement
 				m_ProjectPrefs = new ProjectPreferences();
 			}
 
+			Func<string, List<SceneEntry>> ParseScenesFromFile = (filePath) => {
+				var list = new List<SceneEntry>();
+
+				string[] lines = File.ReadAllLines(filePath);
+				foreach(string line in lines) {
+					var inputs = line.Split('|');
+					string path = inputs.FirstOrDefault() ?? "";
+					string guid = string.Empty;
+
+					// LEGACY: initially only paths were stored, no guids.
+					if (inputs.Length > 1) {
+						guid = inputs[1];
+					}
+
+					list.Add(new SceneEntry(guid, path));
+				}
+
+				return list;
+			};
+
 			if (File.Exists(SettingsPathPinnedScenes)) {
-				m_Pinned = new List<SceneEntry>(File.ReadAllLines(SettingsPathPinnedScenes).Select(line => new SceneEntry(line)));
+				m_Pinned = ParseScenesFromFile(SettingsPathPinnedScenes);
 			} else if (File.Exists(Legacy_SettingsPathPinnedScenes)) {
-				m_Pinned = new List<SceneEntry>(File.ReadAllLines(Legacy_SettingsPathPinnedScenes).Select(line => new SceneEntry(line)));
+				m_Pinned = ParseScenesFromFile(Legacy_SettingsPathPinnedScenes);
 			}
 
 			if (File.Exists(SettingsPathScenes)) {
-				m_Scenes = new List<SceneEntry>(File.ReadAllLines(SettingsPathScenes).Select(line => new SceneEntry(line)));
+				m_Scenes = ParseScenesFromFile(SettingsPathScenes);
 			} else if (File.Exists(Legacy_SettingsPathScenes)) {
-				m_Scenes = new List<SceneEntry>(File.ReadAllLines(Legacy_SettingsPathScenes).Select(line => new SceneEntry(line)));
+				m_Scenes = ParseScenesFromFile(Legacy_SettingsPathScenes);
 			}
 		}
 
@@ -654,30 +722,26 @@ namespace DevLocker.Tools.AssetManagement
 				LoadData();
 			}
 
+			var knownGuids = new HashSet<string>();
+			bool hasChanges = UpdateScenesList(m_Scenes, knownGuids);
+			hasChanges = UpdateScenesList(m_Pinned, knownGuids) || hasChanges;
+
 			//
 			// Cache available scenes
 			//
-			string[] sceneGuids = AssetDatabase.FindAssets("t:Scene");
-			var scenesInDB = new List<string>(sceneGuids.Length);
-			foreach (string guid in sceneGuids) {
+			string[] foundSceneGuids = AssetDatabase.FindAssets("t:Scene");
+			foreach (string guid in foundSceneGuids) {
+
+				if (knownGuids.Contains(guid))
+					continue;
+
 				string scenePath = AssetDatabase.GUIDToAssetPath(guid);
 
 				if (ShouldExclude(m_ProjectPrefs.Exclude.Concat(m_PersonalPrefs.Exclude), scenePath))
 					continue;
 
-				scenesInDB.Add(scenePath);
-			}
-
-			bool hasChanges = RemoveRedundant(m_Scenes, scenesInDB);
-			hasChanges = RemoveRedundant(m_Pinned, scenesInDB) || hasChanges;
-
-			foreach (string s in scenesInDB) {
-
-				if (m_Scenes.Concat(m_Pinned).All(e => e.Path != s)) {
-					m_Scenes.Add(new SceneEntry(s));
-
-					hasChanges = true;
-				}
+				m_Scenes.Add(new SceneEntry(guid, scenePath));
+				hasChanges = true;
 			}
 
 			if (!m_Initialized && LEGACY_ReadPinnedListFromPrefs())
@@ -1024,7 +1088,7 @@ namespace DevLocker.Tools.AssetManagement
 
 			int groupsCount = 0;
 			for (int i = 0; i < scenes.Count; ++i) {
-				var entry = scenes[i];
+				SceneEntry entry = scenes[i];
 
 				if (entry.FirstInGroup) {
 					groupsCount++;
