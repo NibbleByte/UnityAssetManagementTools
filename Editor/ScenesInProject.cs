@@ -211,6 +211,7 @@ namespace DevLocker.Tools.AssetManagement
 		private GUIStyle ToolbarButtonStyle;
 		private GUIContent PreferencesButtonContent;
 		private GUIContent QuickSortButtonContent;
+		private GUIContent ReloadButtonContent;
 
 		internal static bool AssetsChanged = false;
 
@@ -894,6 +895,7 @@ namespace DevLocker.Tools.AssetManagement
 
 			PreferencesButtonContent = new GUIContent(EditorGUIUtility.FindTexture("Settings"), "Preferences...");
 			QuickSortButtonContent = new GUIContent(EditorGUIUtility.FindTexture("CustomSorting"), "Quick sort scenes");
+			ReloadButtonContent = new GUIContent(EditorGUIUtility.FindTexture("Refresh"), "Reload currently loaded scenes");
 		}
 
 		private void SynchronizeInstancesToMe()
@@ -993,6 +995,15 @@ namespace DevLocker.Tools.AssetManagement
 				m_FocusFilterField = true;
 				Repaint();
 			}
+
+			EditorGUI.BeginDisabledGroup(Application.isPlaying);
+
+			if (GUILayout.Button(ReloadButtonContent, ToolbarButtonStyle, GUILayout.Width(25.0f))) {
+				ReloadLoadedScenes();
+				GUIUtility.ExitGUI();
+			}
+
+			EditorGUI.EndDisabledGroup();
 
 			if (GUILayout.Button(QuickSortButtonContent, ToolbarButtonStyle, GUILayout.Width(25.0f))) {
 				ShowQuickSortOptions();
@@ -1791,6 +1802,40 @@ namespace DevLocker.Tools.AssetManagement
 			}
 
 			return false;
+		}
+
+		private void ReloadLoadedScenes()
+		{
+			Scene activeScene = SceneManager.GetActiveScene();
+			int activeSceneIndex = 0;
+
+			// Scene structs loose it's data when scene is unloaded, so don't use it.
+			var loadedScenes = new List<KeyValuePair<string, bool>>(SceneManager.sceneCount);
+			for(int i = 0; i < SceneManager.sceneCount; ++i) {
+				Scene scene = SceneManager.GetSceneAt(i);
+
+				loadedScenes.Add(new KeyValuePair<string, bool>(scene.path, scene.isLoaded));
+				if (activeScene == scene) {
+					activeSceneIndex = i;
+				}
+			}
+
+
+			if (EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) {
+				EditorSceneManager.OpenScene(loadedScenes[0].Key, OpenSceneMode.Single);
+
+				for(int i = 0; i < loadedScenes.Count; ++i) {
+					EditorSceneManager.OpenScene(loadedScenes[i].Key, loadedScenes[i].Value ? OpenSceneMode.Additive : OpenSceneMode.AdditiveWithoutLoading);
+				}
+
+				// In case the active scene was not the first one.
+				SceneManager.SetActiveScene(SceneManager.GetSceneAt(activeSceneIndex));
+
+				// First scene could have been unloaded, but we left it loaded.
+				if (!loadedScenes[0].Value) {
+					EditorSceneManager.CloseScene(SceneManager.GetSceneAt(0), false);
+				}
+			}
 		}
 
 		private void ShowQuickSortOptions()
