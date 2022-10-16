@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using UnityEditor.SceneManagement;
 using UnityEngine.SceneManagement;
 using System.Linq;
+using System.Text;
 
 namespace DevLocker.Tools.AssetManagement
 {
@@ -81,6 +82,15 @@ namespace DevLocker.Tools.AssetManagement
 		}
 
 		[Serializable]
+		private struct PackedSceneState
+		{
+			public string Guid;
+			public string Path;
+			public bool Loaded;
+			public bool IsMainScene;
+		}
+
+		[Serializable]
 		private class SceneEntry
 		{
 			public SceneEntry() { }
@@ -88,6 +98,14 @@ namespace DevLocker.Tools.AssetManagement
 			{
 				Path = path;
 				Guid = guid;
+				RefreshDetails();
+			}
+			public SceneEntry(string guid, IEnumerable<PackedSceneState> packedScenes)
+			{
+				Guid = guid;
+				PackedSceneState mainScene = packedScenes.First(s => s.IsMainScene);
+				Path = mainScene.Path;
+				PackedScenes = packedScenes.ToArray();
 				RefreshDetails();
 			}
 
@@ -100,6 +118,14 @@ namespace DevLocker.Tools.AssetManagement
 
 			public ColorizePattern ColorizePattern;
 
+			public bool IsPack => PackedScenes.Length > 0;
+
+			public PackedSceneState[] PackedScenes = new PackedSceneState[0];
+
+			public PackedSceneState PackedMainSceneState => PackedScenes.FirstOrDefault(s => s.IsMainScene);
+
+			public const string PackedSceneGuidPrefix = "pack-";
+
 			public void RefreshDetails()
 			{
 				Name = string.IsNullOrEmpty(Path) ? "" : System.IO.Path.GetFileNameWithoutExtension(Path);
@@ -110,12 +136,84 @@ namespace DevLocker.Tools.AssetManagement
 			{
 				var clone = (SceneEntry) MemberwiseClone();
 				clone.ColorizePattern = ColorizePattern?.Clone();
+				clone.PackedScenes = PackedScenes.ToArray();
 				return clone;
 			}
 
 			public override string ToString()
 			{
-				return Path;
+				return IsPack ? "Pack: " + Path : Path;
+			}
+
+			private readonly char[] m_SerializeMainSeparator = new char[] { '|' };
+			private readonly char[] m_SerializePackedInputsSeparator = new char[] { ';' };
+			private readonly char[] m_SerializePackedParamsSeparator = new char[] { ' ' };
+
+			public string Serialize()
+			{
+				var data = new StringBuilder();
+				data.Append(Path);
+				data.Append(m_SerializeMainSeparator[0]);
+				data.Append(Guid);
+
+				if (IsPack) {
+					data.Append(m_SerializeMainSeparator[0]);
+					foreach(PackedSceneState packedScene in PackedScenes) {
+						int loadedParam = packedScene.Loaded ? 1 : 0;
+						if (packedScene.IsMainScene) {
+							loadedParam = 2;
+						}
+
+						data.Append(packedScene.Guid);
+						data.Append(m_SerializePackedParamsSeparator[0]);
+						data.Append(loadedParam);
+						data.Append(m_SerializePackedInputsSeparator[0]);
+					}
+				}
+
+				return data.ToString();
+			}
+
+			public void Deserialize(string data)
+			{
+				var inputs = data.Split(m_SerializeMainSeparator, StringSplitOptions.RemoveEmptyEntries);
+				Path = inputs.FirstOrDefault() ?? "";
+				Guid = string.Empty;
+
+				// LEGACY: initially only paths were stored, no guids.
+				if (inputs.Length > 1) {
+					Guid = inputs[1];
+
+					if (inputs.Length > 2) {
+						var packedInputs = inputs[2].Split(m_SerializePackedInputsSeparator, StringSplitOptions.RemoveEmptyEntries);
+						var packedScenes = new List<PackedSceneState>(packedInputs.Length);
+
+						foreach(string packedInput in packedInputs) {
+							var packedParams = packedInput.Split(m_SerializePackedParamsSeparator, StringSplitOptions.RemoveEmptyEntries);
+							if (packedParams.Length == 2) {
+								int loadedParam;
+								int.TryParse(packedParams[1], out loadedParam);
+
+								var packedScene = new PackedSceneState() {
+									Guid = packedParams[0],
+									Path = AssetDatabase.GUIDToAssetPath(packedParams[0]),
+									Loaded = loadedParam != 0,
+									IsMainScene = loadedParam == 2,
+								};
+
+								packedScenes.Add(packedScene);
+
+								if (loadedParam == 2 && !string.IsNullOrEmpty(packedScene.Path)) {
+									Path = packedScene.Path;
+								}
+							}
+						}
+
+						PackedScenes = packedScenes.ToArray();
+					}
+				}
+
+				RefreshDetails();
 			}
 		}
 
@@ -194,6 +292,9 @@ namespace DevLocker.Tools.AssetManagement
 		private GUIStyle SceneOptionsButtonStyle;
 		private GUIContent SceneOptionsButtonContent = new GUIContent("\u2261", "Options...");	// \u2261 \u20AA
 
+		private GUIStyle SceneOptionsPackButtonStyle;
+		private GUIContent SceneOptionsPackButtonContent = new GUIContent("*", "Pack options...");
+
 		private GUIContent ScenePlayButtonContent = new GUIContent("\u25BA", "Play directly");
 		private GUIStyle ScenePlayButtonStyle;
 
@@ -212,6 +313,7 @@ namespace DevLocker.Tools.AssetManagement
 		private GUIContent PreferencesButtonContent;
 		private GUIContent QuickSortButtonContent;
 		private GUIContent ReloadButtonContent;
+		private GUIContent CreatePackageButtonContent;
 
 		internal static bool AssetsChanged = false;
 
@@ -373,8 +475,8 @@ namespace DevLocker.Tools.AssetManagement
 		private void StoreAllScenes()
 		{
 			try {
-				File.WriteAllLines(SettingsPathPinnedScenes, m_Pinned.Select(e => e.Path + "|" + e.Guid));
-				File.WriteAllLines(SettingsPathScenes, m_Scenes.Select(e => e.Path + "|" + e.Guid));
+				File.WriteAllLines(SettingsPathPinnedScenes, m_Pinned.Select(e => e.Serialize()));
+				File.WriteAllLines(SettingsPathScenes, m_Scenes.Select(e => e.Serialize()));
 			}
 			catch (Exception ex) {
 				Debug.LogException(ex);
@@ -422,6 +524,27 @@ namespace DevLocker.Tools.AssetManagement
 					if (guidSeparatorIndex != -1) {
 						string patternPath = colors.Patterns.Substring(0, guidSeparatorIndex);
 						string patternGuid = colors.Patterns.Substring(guidSeparatorIndex + 1);
+
+						if (patternGuid.StartsWith(SceneEntry.PackedSceneGuidPrefix, StringComparison.OrdinalIgnoreCase)) {
+							SceneEntry sceneEntry = m_Pinned.FirstOrDefault(s => s.Guid == patternGuid);
+							if (sceneEntry == null) {
+								m_PersonalPrefs.ColorizePatterns.RemoveAt(i);
+								hasChanged = true;
+							} else {
+								PackedSceneState mainScene = sceneEntry.PackedMainSceneState;
+								string foundPackedScenePath = AssetDatabase.GUIDToAssetPath(mainScene.Guid);
+
+								if (string.IsNullOrEmpty(foundPackedScenePath)) {
+									m_PersonalPrefs.ColorizePatterns.RemoveAt(i);
+									hasChanged = true;
+								} else if (foundPackedScenePath != patternPath) {
+									colors.Patterns = colors.Patterns.Replace(patternPath, foundPackedScenePath);
+									hasChanged = true;
+								}
+							}
+							continue;
+						}
+
 						string foundPath = AssetDatabase.GUIDToAssetPath(patternGuid);
 
 						if (string.IsNullOrEmpty(foundPath)) {
@@ -479,8 +602,26 @@ namespace DevLocker.Tools.AssetManagement
 				} else {
 					// Update the path in case it changed.
 
+					string foundPath = entry.IsPack ? "" : AssetDatabase.GUIDToAssetPath(entry.Guid);
+					if (entry.IsPack) {
+
+						for(int packedIndex = 0; packedIndex < entry.PackedScenes.Length; ++packedIndex) {
+							PackedSceneState packedScene = entry.PackedScenes[packedIndex];
+							string foundPackedScenePath = AssetDatabase.GUIDToAssetPath(packedScene.Guid);
+
+							if (packedScene.Path != foundPackedScenePath) {
+								packedScene.Path = foundPackedScenePath;
+								entry.PackedScenes[packedIndex] = packedScene;
+								hasChanged = true;
+							}
+
+							if (packedScene.IsMainScene) {
+								foundPath = foundPackedScenePath;
+							}
+						}
+					}
+
 					// Because deleted assets keep their guid-to-path mapping until Unity is restarted.
-					string foundPath = AssetDatabase.GUIDToAssetPath(entry.Guid);
 					if (!string.IsNullOrEmpty(foundPath) && !File.Exists(foundPath)) {
 						foundPath = "";
 					}
@@ -498,7 +639,7 @@ namespace DevLocker.Tools.AssetManagement
 					continue;
 				}
 
-				if (ShouldExclude(entry.Guid, entry.Path, m_ProjectPrefs.Exclude.Concat(m_PersonalPrefs.Exclude))) {
+				if (!entry.IsPack && ShouldExclude(entry.Guid, entry.Path, m_ProjectPrefs.Exclude.Concat(m_PersonalPrefs.Exclude))) {
 					list.RemoveAt(i);
 					hasChanged = true;
 					continue;
@@ -611,6 +752,12 @@ namespace DevLocker.Tools.AssetManagement
 		private void RefreshDisplayNames(List<SceneEntry> list)
 		{
 			foreach(var sceneEntry in list) {
+
+				if (sceneEntry.IsPack) {
+					sceneEntry.DisplayName = $"[\"{sceneEntry.Name}\" + {sceneEntry.PackedScenes.Length - 1} scenes]";
+					continue;
+				}
+
 				switch(m_PersonalPrefs.SceneDisplay) {
 
 					case SceneDisplay.SceneNames:
@@ -652,14 +799,13 @@ namespace DevLocker.Tools.AssetManagement
 			var splitters = new char[] { ';' };
 
 			foreach(var sceneEntry in list) {
-				sceneEntry.ColorizePattern = GetMatchedColorPattern(sceneEntry.Guid, sceneEntry.Path, m_ProjectPrefs.ColorizePatterns.Concat(m_PersonalPrefs.ColorizePatterns));
+				sceneEntry.ColorizePattern = GetMatchedColorPattern(sceneEntry, m_ProjectPrefs.ColorizePatterns.Concat(m_PersonalPrefs.ColorizePatterns));
 			}
 		}
 
-		private static ColorizePattern GetMatchedColorPattern(string guid, string scenePath, IEnumerable<ColorizePattern> colorPatterns)
+		private static ColorizePattern GetMatchedColorPattern(SceneEntry sceneEntry, IEnumerable<ColorizePattern> colorPatterns)
 		{
 			var splitters = new char[] { ';' };
-			string sceneName = Path.GetFileNameWithoutExtension(scenePath);
 
 			bool matchedByName = false;
 
@@ -679,16 +825,21 @@ namespace DevLocker.Tools.AssetManagement
 						int guidSeparatorIndex = pattern.LastIndexOf('|');
 						if (guidSeparatorIndex != -1) {
 							string patternGuid = pattern.Substring(guidSeparatorIndex + 1);
-							if (guid == patternGuid) {
+							if (sceneEntry.Guid == patternGuid) {
 								// This is always preferred to path or name.
 								return colors;
 							}
+
+							// Packs match only by guid and don't mix with other scenes.
+							if (sceneEntry.IsPack || patternGuid.StartsWith(SceneEntry.PackedSceneGuidPrefix, StringComparison.OrdinalIgnoreCase))
+								continue;
+
 						} else {
 							guidSeparatorIndex = pattern.Length;
 						}
 
 						// If this is colorized dir, match without the guid part.
-						if (!matchedByName && scenePath.StartsWith(pattern.Substring(0, guidSeparatorIndex), StringComparison.OrdinalIgnoreCase)) {
+						if (!matchedByName && sceneEntry.Path.StartsWith(pattern.Substring(0, guidSeparatorIndex), StringComparison.OrdinalIgnoreCase)) {
 
 							var prevPattern = colorPattern?.Patterns ?? string.Empty;
 
@@ -704,7 +855,7 @@ namespace DevLocker.Tools.AssetManagement
 					} else {
 
 						// This is preferred to path, but not to guid.
-						if (!matchedByName && sceneName.IndexOf(pattern, StringComparison.OrdinalIgnoreCase) != -1) {
+						if (!matchedByName && sceneEntry.Name.IndexOf(pattern, StringComparison.OrdinalIgnoreCase) != -1) {
 							colorPattern = colors;
 							matchedByName = true;
 						}
@@ -763,16 +914,9 @@ namespace DevLocker.Tools.AssetManagement
 
 				string[] lines = File.ReadAllLines(filePath);
 				foreach(string line in lines) {
-					var inputs = line.Split('|');
-					string path = inputs.FirstOrDefault() ?? "";
-					string guid = string.Empty;
-
-					// LEGACY: initially only paths were stored, no guids.
-					if (inputs.Length > 1) {
-						guid = inputs[1];
-					}
-
-					list.Add(new SceneEntry(guid, path));
+					var entry = new SceneEntry();
+					entry.Deserialize(line);
+					list.Add(entry);
 				}
 
 				return list;
@@ -862,6 +1006,14 @@ namespace DevLocker.Tools.AssetManagement
 			SceneOptionsButtonStyle.fontSize = 14;	// Unity 2020+ default is 12 and squishes the character.
 #endif
 
+			SceneOptionsPackButtonStyle = new GUIStyle(GUI.skin.button);
+			SceneOptionsPackButtonStyle.alignment = TextAnchor.MiddleCenter;
+#if UNITY_2019_1_OR_NEWER
+			SceneOptionsPackButtonStyle.padding = new RectOffset(2, 2, 2, 1);
+#else
+			SceneOptionsPackButtonStyle.padding = new RectOffset(2, 2, 0, 0);
+#endif
+
 			ScenePlayButtonStyle = new GUIStyle(GUI.skin.GetStyle("ButtonLeft"));
 			ScenePlayButtonStyle.alignment = TextAnchor.MiddleCenter;
 			ScenePlayButtonStyle.padding.left += 2;
@@ -896,6 +1048,14 @@ namespace DevLocker.Tools.AssetManagement
 			PreferencesButtonContent = new GUIContent(EditorGUIUtility.FindTexture("Settings"), "Preferences...");
 			QuickSortButtonContent = new GUIContent(EditorGUIUtility.FindTexture("CustomSorting"), "Quick sort scenes");
 			ReloadButtonContent = new GUIContent(EditorGUIUtility.FindTexture("Refresh"), "Reload currently loaded scenes");
+
+
+#if UNITY_2020_1_OR_NEWER
+			CreatePackageButtonContent = new GUIContent(EditorGUIUtility.FindTexture("d_winbtn_win_restore"), "Create a pack of the currently loaded scenes.");
+#else
+			CreatePackageButtonContent = new GUIContent(EditorGUIUtility.FindTexture("TerrainInspector.TerrainToolLowerAlt"), "Create a pack of the currently loaded scenes.");
+#endif
+			SceneOptionsPackButtonContent = new GUIContent(CreatePackageButtonContent.image, SceneOptionsPackButtonContent.tooltip);
 		}
 
 		private void SynchronizeInstancesToMe()
@@ -997,6 +1157,15 @@ namespace DevLocker.Tools.AssetManagement
 			}
 
 			EditorGUI.BeginDisabledGroup(Application.isPlaying);
+
+			if (GUILayout.Button(CreatePackageButtonContent, ToolbarButtonStyle, GUILayout.Width(25.0f))) {
+				if (SceneManager.sceneCount == 1) {
+					EditorUtility.DisplayDialog("Create Pack of Scenes", "You need to have one or more scenes loaded additively.", "Ok");
+				} else {
+					CreateScenesPackage();
+					GUIUtility.ExitGUI();
+				}
+			}
 
 			if (GUILayout.Button(ReloadButtonContent, ToolbarButtonStyle, GUILayout.Width(25.0f))) {
 				ReloadLoadedScenes();
@@ -1321,13 +1490,24 @@ namespace DevLocker.Tools.AssetManagement
 
 			SceneButtonContentCache.text = sceneEntry.DisplayName;
 			SceneButtonContentCache.tooltip = sceneEntry.Path;
+			if (sceneEntry.IsPack) {
+				var tooltipBuilder = new StringBuilder();
+				tooltipBuilder.AppendLine("Pack of scenes:");
+				foreach(var packedScene in sceneEntry.PackedScenes) {
+					tooltipBuilder.AppendLine(packedScene.Path);
+				}
+
+				SceneButtonContentCache.tooltip = tooltipBuilder.ToString();
+			}
 
 			var prevBackgroundColor = GUI.backgroundColor;
 			var prevColor = SceneButtonStyle.normal.textColor;
 			if (sceneEntry.ColorizePattern != null && !string.IsNullOrEmpty(sceneEntry.ColorizePattern.Patterns)) {
 				GUI.backgroundColor = sceneEntry.ColorizePattern.BackgroundColor;
+				Color textColor = sceneEntry.ColorizePattern.TextColor;
+
 				if (EditorGUIUtility.isProSkin) {
-					GUI.backgroundColor = GUI.backgroundColor + new Color(0.4f, 0.4f, 0.4f);
+					GUI.backgroundColor += new Color(0.4f, 0.4f, 0.4f, 0f);
 				}
 
 				SceneButtonStyle.normal.textColor
@@ -1351,22 +1531,24 @@ namespace DevLocker.Tools.AssetManagement
 					= SceneLoadedButtonStyle.focused.textColor
 
 					= GUI.contentColor
-					= sceneEntry.ColorizePattern.TextColor;
+					= textColor;
 			}
 
 			if (sceneEntry == m_DraggedEntity) {
 				GUI.backgroundColor *= new Color(0.9f, 0.9f, 0.9f, 0.6f);
 			}
 
-			var scene = SceneManager.GetSceneByPath(sceneEntry.Path);
+			Scene scene = sceneEntry.IsPack ? default : SceneManager.GetSceneByPath(sceneEntry.Path);
 			bool isSceneLoaded = scene.IsValid();
 			bool isActiveScene = isSceneLoaded && scene == SceneManager.GetActiveScene();
 			var loadedButton = isSceneLoaded ? (isActiveScene ? SceneLoadedButtonActiveContent : SceneLoadedButtonRemoveContent) : SceneLoadedButtonAddContent;
 
-			bool optionsPressed = GUILayout.Button(SceneOptionsButtonContent, SceneOptionsButtonStyle, GUILayout.Width(22));
+			bool optionsPressed = GUILayout.Button(sceneEntry.IsPack ? SceneOptionsPackButtonContent : SceneOptionsButtonContent, sceneEntry.IsPack ? SceneOptionsPackButtonStyle : SceneOptionsButtonStyle, GUILayout.Width(22));
 			bool scenePressed = GUILayout.Button(SceneButtonContentCache, SceneButtonStyle) || forceOpen;
 			var dragRect = EditorGUILayout.GetControlRect(false, GUILayout.Width(5f), GUILayout.Height(EditorGUIUtility.singleLineHeight + 2f));
+			EditorGUI.BeginDisabledGroup(sceneEntry.IsPack);
 			bool playPressed = GUILayout.Button(ScenePlayButtonContent, ScenePlayButtonStyle, GUILayout.Width(20));
+			EditorGUI.EndDisabledGroup();
 			bool loadPressed = GUILayout.Button(loadedButton, SceneLoadedButtonStyle, GUILayout.Width(21));
 
 			if (allowDrag) {
@@ -1422,11 +1604,19 @@ namespace DevLocker.Tools.AssetManagement
 				} else if (Application.isPlaying || EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) {
 
 					if (Application.isPlaying) {
-						// Note: to do this, the scene must me added to the build settings list.
-						// Note2: Sometimes there are side effects with the lighting.
-						SceneManager.LoadSceneAsync(sceneEntry.Path);
+						if (sceneEntry.IsPack) {
+							EditorUtility.DisplayDialog("Load Pack of Scenes", "Cannot load pack of scenes while in Play mode.", "Ok");
+						} else {
+							// Note: to do this, the scene must me added to the build settings list.
+							// Note2: Sometimes there are side effects with the lighting.
+							SceneManager.LoadSceneAsync(sceneEntry.Path);
+						}
 					} else {
-						EditorSceneManager.OpenScene(sceneEntry.Path);
+						if (sceneEntry.IsPack) {
+							LoadPackedScenes(sceneEntry, false);
+						} else {
+							EditorSceneManager.OpenScene(sceneEntry.Path);
+						}
 					}
 
 					if (m_PersonalPrefs.SortType == SortType.MostRecent) {
@@ -1448,6 +1638,12 @@ namespace DevLocker.Tools.AssetManagement
 
 			if (loadPressed) {
 				if (Application.isPlaying) {
+
+					if (sceneEntry.IsPack) {
+						EditorUtility.DisplayDialog("Load Pack of Scenes", "Cannot load pack of scenes while in Play mode.", "Ok");
+						GUIUtility.ExitGUI();
+					}
+
 					if (!isSceneLoaded) {
 						// Note: to do this, the scene must me added to the build settings list.
 						SceneManager.LoadScene(sceneEntry.Path, LoadSceneMode.Additive);
@@ -1455,6 +1651,11 @@ namespace DevLocker.Tools.AssetManagement
 						SceneManager.UnloadSceneAsync(scene);
 					}
 				} else {
+					if (sceneEntry.IsPack) {
+						LoadPackedScenes(sceneEntry, true);
+						GUIUtility.ExitGUI();
+					}
+
 					if (!isSceneLoaded) {
 						EditorSceneManager.OpenScene(sceneEntry.Path, OpenSceneMode.Additive);
 
@@ -1477,6 +1678,9 @@ namespace DevLocker.Tools.AssetManagement
 
 			foreach (SceneOptions value in Enum.GetValues(typeof(SceneOptions))) {
 
+				if (sceneEntry.IsPack && value == SceneOptions.Exclude)
+					continue;
+
 				if (value == SceneOptions.Exclude) {
 					menu.AddItem(new GUIContent($"Exclude/Exclude Scene"), false, OnExcludeOption, sceneEntry.Path);
 					menu.AddItem(new GUIContent($"Exclude/Exclude Folder"), false, OnExcludeOption, Path.GetDirectoryName(sceneEntry.Path).Replace("\\", "/"));
@@ -1489,14 +1693,14 @@ namespace DevLocker.Tools.AssetManagement
 							menu.AddSeparator("Colorize/");
 						}
 
-						menu.AddItem(new GUIContent($"Colorize/{ObjectNames.NicifyVariableName(colorValue.ToString())}"), false, OnColorizeOption, MakeKVP(colorValue, sceneEntry.Path));
+						menu.AddItem(new GUIContent($"Colorize/{ObjectNames.NicifyVariableName(colorValue.ToString())}"), false, OnColorizeOption, MakeKVP(colorValue, sceneEntry));
 					}
 					continue;
 				}
 
 				string menuName = ObjectNames.NicifyVariableName(value.ToString());
 				if (value == SceneOptions.Pin && isPinned) {
-					menuName = "Unpin";
+					menuName = sceneEntry.IsPack ? "Remove Pack" : "Unpin";
 				}
 
 				var handler = isPinned ? (GenericMenu.MenuFunction2) OnSelectPinnedOption : OnSelectUnpinnedOption;
@@ -1512,20 +1716,27 @@ namespace DevLocker.Tools.AssetManagement
 			int index = pair.Value;
 
 			bool shouldAutoSnapSplitter = false;
+			var sceneEntry = m_Pinned[index];
 
 			switch (pair.Key) {
 
 				case SceneOptions.Pin:
 					shouldAutoSnapSplitter = ShouldAutoSnapSplitter();
 
-					var sceneEntry = m_Pinned[index];
 					m_Pinned.RemoveAt(index);
 
-					int unpinIndex = m_Scenes.FindIndex(s => s.Folder == sceneEntry.Folder);
-					if (unpinIndex == -1) {
-						m_Scenes.Insert(0, sceneEntry);
+					if (!sceneEntry.IsPack) {
+						int unpinIndex = m_Scenes.FindIndex(s => s.Folder == sceneEntry.Folder);
+						if (unpinIndex == -1) {
+							m_Scenes.Insert(0, sceneEntry);
+						} else {
+							m_Scenes.Insert(unpinIndex, sceneEntry);
+						}
 					} else {
-						m_Scenes.Insert(unpinIndex, sceneEntry);
+						// Remove Colorize associated with this pack.
+						if (UpdatePreferenceLists()) {
+							StorePersonalPrefs();
+						}
 					}
 
 					break;
@@ -1541,15 +1752,19 @@ namespace DevLocker.Tools.AssetManagement
 					break;
 
 				case SceneOptions.CopyAssetPath:
-					EditorGUIUtility.systemCopyBuffer = m_Pinned[index].Path;
+					if (sceneEntry.IsPack) {
+						EditorGUIUtility.systemCopyBuffer = string.Join("\n", sceneEntry.PackedScenes.Select(s => s.Path));
+					} else {
+						EditorGUIUtility.systemCopyBuffer = sceneEntry.Path;
+					}
 					return;
 
 				case SceneOptions.ShowInExplorer:
-					EditorUtility.RevealInFinder(m_Pinned[index].Path);
+					EditorUtility.RevealInFinder(sceneEntry.Path);
 					return;
 
 				case SceneOptions.ShowInProject:
-					EditorGUIUtility.PingObject(AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(m_Pinned[index].Path));
+					EditorGUIUtility.PingObject(AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(sceneEntry.Path));
 					return;
 			}
 
@@ -1574,13 +1789,13 @@ namespace DevLocker.Tools.AssetManagement
 			int index = pair.Value;
 
 			bool shouldAutoSnapSplitter = false;
+			var sceneEntry = m_Scenes[index];
 
 			switch (pair.Key) {
 
 				case SceneOptions.Pin:
 					shouldAutoSnapSplitter = ShouldAutoSnapSplitter();
 
-					var sceneEntry = m_Scenes[index];
 					m_Scenes.RemoveAt(index);
 
 					int pinIndex = m_Pinned.FindLastIndex(s => s.Folder == sceneEntry.Folder);
@@ -1603,15 +1818,19 @@ namespace DevLocker.Tools.AssetManagement
 					break;
 
 				case SceneOptions.CopyAssetPath:
-					EditorGUIUtility.systemCopyBuffer = m_Scenes[index].Path;
+					if (sceneEntry.IsPack) {
+						EditorGUIUtility.systemCopyBuffer = string.Join("\n", sceneEntry.PackedScenes.Select(s => s.Path));
+					} else {
+						EditorGUIUtility.systemCopyBuffer = sceneEntry.Path;
+					}
 					return;
 
 				case SceneOptions.ShowInExplorer:
-					EditorUtility.RevealInFinder(m_Scenes[index].Path);
+					EditorUtility.RevealInFinder(sceneEntry.Path);
 					return;
 
 				case SceneOptions.ShowInProject:
-					EditorGUIUtility.PingObject(AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(m_Scenes[index].Path));
+					EditorGUIUtility.PingObject(AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(sceneEntry.Path));
 					return;
 			}
 
@@ -1641,9 +1860,8 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void OnColorizeOption(object data)
 		{
-			var pair = (KeyValuePair<ColorizeOptions, string>)data;
-			string scenePath = pair.Value;
-			string guid = AssetDatabase.AssetPathToGUID(scenePath);
+			var pair = (KeyValuePair<ColorizeOptions, SceneEntry>)data;
+			SceneEntry sceneEntry = pair.Value;
 
 			ColorizePattern colorPattern;
 
@@ -1688,10 +1906,13 @@ namespace DevLocker.Tools.AssetManagement
 
 				case ColorizeOptions.Clear:
 
-					colorPattern = m_PersonalPrefs.ColorizePatterns.FirstOrDefault(cp => cp.Patterns.Contains(scenePath));
+					colorPattern = sceneEntry.IsPack
+						? m_PersonalPrefs.ColorizePatterns.FirstOrDefault(cp => cp.Patterns.Contains(sceneEntry.Guid))
+						: m_PersonalPrefs.ColorizePatterns.FirstOrDefault(cp => cp.Patterns.Contains(sceneEntry.Path) && !cp.Patterns.Contains($"|{SceneEntry.PackedSceneGuidPrefix}"))
+						;
 
 					if (colorPattern == null) {
-						colorPattern = GetMatchedColorPattern(guid, scenePath, m_PersonalPrefs.ColorizePatterns);
+						colorPattern = GetMatchedColorPattern(sceneEntry, m_PersonalPrefs.ColorizePatterns);
 
 						if (colorPattern != null) {
 							bool choice = EditorUtility.DisplayDialog(
@@ -1703,7 +1924,7 @@ namespace DevLocker.Tools.AssetManagement
 							if (!choice)
 								return;
 						} else {
-							colorPattern = GetMatchedColorPattern(guid, scenePath, m_ProjectPrefs.ColorizePatterns);
+							colorPattern = GetMatchedColorPattern(sceneEntry, m_ProjectPrefs.ColorizePatterns);
 							EditorUtility.DisplayDialog(
 								"Clear Scene Colorization",
 								$"Selected scene is included in a project-wide colorize pattern:\n\"{colorPattern.Patterns}\"\nDiscuss this with your team, then change the pattern in the project preferences.",
@@ -1734,10 +1955,13 @@ namespace DevLocker.Tools.AssetManagement
 
 			}
 
-			colorPattern = m_PersonalPrefs.ColorizePatterns.FirstOrDefault(cp => cp.Patterns.Contains(scenePath));
+			colorPattern = sceneEntry.IsPack
+				? m_PersonalPrefs.ColorizePatterns.FirstOrDefault(cp => cp.Patterns.Contains(sceneEntry.Guid))
+				: m_PersonalPrefs.ColorizePatterns.FirstOrDefault(cp => cp.Patterns.Contains(sceneEntry.Path) && !cp.Patterns.Contains($"|{SceneEntry.PackedSceneGuidPrefix}"))
+				;
 
 			if (colorPattern == null) {
-				colorPattern = GetMatchedColorPattern(guid, scenePath, m_PersonalPrefs.ColorizePatterns);
+				colorPattern = GetMatchedColorPattern(sceneEntry, m_PersonalPrefs.ColorizePatterns);
 
 				if (colorPattern != null) {
 					int choice = EditorUtility.DisplayDialogComplex(
@@ -1755,7 +1979,7 @@ namespace DevLocker.Tools.AssetManagement
 
 				if (colorPattern == null) {
 					colorPattern = new ColorizePattern() {
-						Patterns = scenePath + "|" + guid,	// NOTE: use the original path if newly created.
+						Patterns = sceneEntry.Path + "|" + sceneEntry.Guid,	// NOTE: use the original path if newly created.
 						BackgroundColor = Color.white,
 						TextColor = Color.black,
 					};
@@ -1804,6 +2028,70 @@ namespace DevLocker.Tools.AssetManagement
 			return false;
 		}
 
+		private void CreateScenesPackage()
+		{
+			Scene activeScene = SceneManager.GetActiveScene();
+
+			var packedScenes = new List<PackedSceneState>();
+
+			for (int i = 0; i < SceneManager.sceneCount; ++i) {
+				Scene scene = SceneManager.GetSceneAt(i);
+
+				var packedScene = new PackedSceneState() {
+					Guid = AssetDatabase.AssetPathToGUID(scene.path),
+					Path = scene.path,
+					IsMainScene = scene == activeScene,
+					Loaded = scene.isLoaded,
+				};
+
+				packedScenes.Add(packedScene);
+			}
+
+			var guid = SceneEntry.PackedSceneGuidPrefix + GUID.Generate().ToString();
+			var entry = new SceneEntry(guid, packedScenes);
+
+			bool shouldAutoSnapSplitter = ShouldAutoSnapSplitter();
+			m_Pinned.Insert(0, entry);
+			m_PinnedGroupsCount = RegroupScenes(m_Pinned);
+
+			if (shouldAutoSnapSplitter) {
+				AutoSnapSplitter();
+			}
+
+			RefreshDisplayNames(m_Pinned);
+
+			RefreshColorizePatterns(m_Pinned);
+
+			StoreAllScenes();
+			SynchronizeInstancesToMe();
+
+			Repaint();
+		}
+
+		private void LoadPackedScenes(SceneEntry sceneEntry, bool additive)
+		{
+			EditorSceneManager.OpenScene(AssetDatabase.GUIDToAssetPath(sceneEntry.PackedScenes[0].Guid), additive ? OpenSceneMode.Additive : OpenSceneMode.Single);
+			int activeSceneIndex = 0;
+
+			for (int i = 1 /* 0 is loaded */; i < sceneEntry.PackedScenes.Length; ++i) {
+				var packedScene = sceneEntry.PackedScenes[i];
+				EditorSceneManager.OpenScene(AssetDatabase.GUIDToAssetPath(packedScene.Guid), packedScene.Loaded ? OpenSceneMode.Additive : OpenSceneMode.AdditiveWithoutLoading);
+				if (packedScene.IsMainScene) {
+					activeSceneIndex = i;
+				}
+			}
+
+			if (!additive) {
+				// In case the active scene was not the first one.
+				SceneManager.SetActiveScene(SceneManager.GetSceneAt(activeSceneIndex));
+			}
+
+			// First scene could have been unloaded, but we left it loaded.
+			if (!sceneEntry.PackedScenes[0].Loaded) {
+				EditorSceneManager.CloseScene(SceneManager.GetSceneAt(0), false);
+			}
+		}
+
 		private void ReloadLoadedScenes()
 		{
 			Scene activeScene = SceneManager.GetActiveScene();
@@ -1824,7 +2112,7 @@ namespace DevLocker.Tools.AssetManagement
 			if (EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) {
 				EditorSceneManager.OpenScene(loadedScenes[0].Key, OpenSceneMode.Single);
 
-				for(int i = 0; i < loadedScenes.Count; ++i) {
+				for(int i = 1 /* 0 is loaded */; i < loadedScenes.Count; ++i) {
 					EditorSceneManager.OpenScene(loadedScenes[i].Key, loadedScenes[i].Value ? OpenSceneMode.Additive : OpenSceneMode.AdditiveWithoutLoading);
 				}
 
