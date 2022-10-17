@@ -81,13 +81,36 @@ namespace DevLocker.Tools.AssetManagement
 			About = 2,
 		}
 
+		private enum PackedSceneLoadedState
+		{
+			Unloaded = 0,
+			Loaded = 1,
+			MainScene = 2,
+		}
+
 		[Serializable]
 		private struct PackedSceneState
 		{
 			public string Guid;
 			public string Path;
-			public bool Loaded;
-			public bool IsMainScene;
+			public PackedSceneLoadedState LoadedState;
+			public bool IsLoaded => LoadedState != PackedSceneLoadedState.Unloaded;
+			public bool IsMainScene => LoadedState == PackedSceneLoadedState.MainScene;
+		}
+
+		[Serializable]
+		private struct PackedScenesPreference
+		{
+			public string Identifier;
+			public List<PackedSceneState> PackedStates;
+
+			public PackedScenesPreference Clone()
+			{
+				var clone = (PackedScenesPreference) MemberwiseClone();
+				clone.PackedStates = PackedStates.ToList();
+
+				return clone;
+			}
 		}
 
 		[Serializable]
@@ -159,14 +182,9 @@ namespace DevLocker.Tools.AssetManagement
 				if (IsPack) {
 					data.Append(m_SerializeMainSeparator[0]);
 					foreach(PackedSceneState packedScene in PackedScenes) {
-						int loadedParam = packedScene.Loaded ? 1 : 0;
-						if (packedScene.IsMainScene) {
-							loadedParam = 2;
-						}
-
 						data.Append(packedScene.Guid);
 						data.Append(m_SerializePackedParamsSeparator[0]);
-						data.Append(loadedParam);
+						data.Append((int)packedScene.LoadedState);
 						data.Append(m_SerializePackedInputsSeparator[0]);
 					}
 				}
@@ -197,13 +215,12 @@ namespace DevLocker.Tools.AssetManagement
 								var packedScene = new PackedSceneState() {
 									Guid = packedParams[0],
 									Path = AssetDatabase.GUIDToAssetPath(packedParams[0]),
-									Loaded = loadedParam != 0,
-									IsMainScene = loadedParam == 2,
+									LoadedState = (PackedSceneLoadedState) loadedParam,
 								};
 
 								packedScenes.Add(packedScene);
 
-								if (loadedParam == 2 && !string.IsNullOrEmpty(packedScene.Path)) {
+								if (packedScene.IsMainScene && !string.IsNullOrEmpty(packedScene.Path)) {
 									Path = packedScene.Path;
 								}
 							}
@@ -263,6 +280,7 @@ namespace DevLocker.Tools.AssetManagement
 		private class ProjectPreferences
 		{
 			public List<ColorizePattern> ColorizePatterns = new List<ColorizePattern>();
+			public List<PackedScenesPreference> ScenePacks = new List<PackedScenesPreference>();
 			public List<string> Exclude = new List<string>();   // Exclude paths OR filenames (per project preference)
 
 			public ProjectPreferences Clone()
@@ -270,6 +288,7 @@ namespace DevLocker.Tools.AssetManagement
 				var clone = (ProjectPreferences)MemberwiseClone();
 
 				clone.ColorizePatterns = new List<ColorizePattern>(this.ColorizePatterns);
+				clone.ScenePacks = this.ScenePacks.Select(sp => sp.Clone()).ToList();
 				clone.Exclude = new List<string>(this.Exclude);
 
 				return clone;
@@ -651,6 +670,29 @@ namespace DevLocker.Tools.AssetManagement
 			return hasChanged;
 		}
 
+		private bool UpdatePackedScenesFromPreferences()
+		{
+			bool hasChanges = false;
+
+			bool shouldAutoSnapSplitter = ShouldAutoSnapSplitter();
+
+			foreach (PackedScenesPreference packedPreference in m_ProjectPrefs.ScenePacks) {
+				var guid = SceneEntry.PackedSceneGuidPrefix + packedPreference.Identifier;
+
+				if (!m_Pinned.Any(s => s.Guid == guid)) {
+					var entry = new SceneEntry(guid, packedPreference.PackedStates);
+					m_Pinned.Insert(0, entry);
+					hasChanges = true;
+				}
+			}
+
+			if (hasChanges && shouldAutoSnapSplitter) {
+				AutoSnapSplitter();
+			}
+
+			return hasChanges;
+		}
+
 		private static void SortScenes(List<SceneEntry> list, SortType sortType)
 		{
 			switch(sortType) {
@@ -901,8 +943,6 @@ namespace DevLocker.Tools.AssetManagement
 				m_PersonalPrefs = new PersonalPreferences();
 			}
 
-			InitializeSplitter(m_PersonalPrefs.SplitterY);
-
 			if (File.Exists(ProjectPreferencesPath)) {
 				m_ProjectPrefs = JsonUtility.FromJson<ProjectPreferences>(File.ReadAllText(ProjectPreferencesPath));
 			} else {
@@ -937,16 +977,22 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void InitializeData()
 		{
+			bool shouldAutoSnapSplitter = false;
 			if (!m_Initialized) {
 				LoadData();
+
+				shouldAutoSnapSplitter = InitializeSplitter(m_PersonalPrefs.SplitterY);
 			}
 
 			if (UpdatePreferenceLists()) {
 				StorePersonalPrefs();
 			}
+			bool hasChanges = false;
+
+			hasChanges = UpdatePackedScenesFromPreferences() || hasChanges;
 
 			var knownGuids = new HashSet<string>();
-			bool hasChanges = UpdateScenesList(m_Scenes, knownGuids);
+			hasChanges = UpdateScenesList(m_Scenes, knownGuids) || hasChanges;
 			hasChanges = UpdateScenesList(m_Pinned, knownGuids) || hasChanges;
 
 			//
@@ -967,9 +1013,9 @@ namespace DevLocker.Tools.AssetManagement
 				hasChanges = true;
 			}
 
-			if (!m_Initialized && LEGACY_ReadPinnedListFromPrefs())
+			if (!m_Initialized && LEGACY_ReadPinnedListFromPrefs()) {
 				hasChanges = true;
-
+			}
 
 			if (hasChanges || !m_Initialized) {
 				SortScenes(m_Scenes, m_PersonalPrefs.SortType);
@@ -981,6 +1027,10 @@ namespace DevLocker.Tools.AssetManagement
 				RefreshColorizePatterns(m_Pinned);
 
 				StoreAllScenes();
+			}
+
+			if (shouldAutoSnapSplitter) {
+				AutoSnapSplitter();
 			}
 
 			RegroupScenes(m_Scenes);
@@ -1375,17 +1425,22 @@ namespace DevLocker.Tools.AssetManagement
 			return false;
 		}
 
-		private void InitializeSplitter(float startY)
+		private bool InitializeSplitter(float startY)
 		{
+			bool shouldAutoSnapSplitter = false;
+
 			if (startY < 0f) {
 				startY = CalcPinnedViewStartY();
+				shouldAutoSnapSplitter = true;
 			}
 
 			const float splitterHeight = 5f;
 			m_SplitterRect = new Rect(0, startY, position.width, splitterHeight);
+
+			return shouldAutoSnapSplitter;
 		}
 
-		private float CalcPinnedViewStartY()
+		private static float CalcPinnedViewStartY()
 		{
 			// Calculate pinned scroll view layout.
 			const float LINE_PADDING = 4;
@@ -1613,7 +1668,7 @@ namespace DevLocker.Tools.AssetManagement
 						}
 					} else {
 						if (sceneEntry.IsPack) {
-							LoadPackedScenes(sceneEntry, false);
+							LoadPackedScenes(sceneEntry.PackedScenes, false);
 						} else {
 							EditorSceneManager.OpenScene(sceneEntry.Path);
 						}
@@ -1652,7 +1707,7 @@ namespace DevLocker.Tools.AssetManagement
 					}
 				} else {
 					if (sceneEntry.IsPack) {
-						LoadPackedScenes(sceneEntry, true);
+						LoadPackedScenes(sceneEntry.PackedScenes, true);
 						GUIUtility.ExitGUI();
 					}
 
@@ -1721,6 +1776,11 @@ namespace DevLocker.Tools.AssetManagement
 			switch (pair.Key) {
 
 				case SceneOptions.Pin:
+					if (m_ProjectPrefs.ScenePacks.Any(sp => SceneEntry.PackedSceneGuidPrefix + sp.Identifier == sceneEntry.Guid)) {
+						EditorUtility.DisplayDialog("Pack of Scenes", "Can't remove this pack as it comes from the project preferences. Discuss this with your team and remove it from there.", "Ok");
+						return;
+					}
+
 					shouldAutoSnapSplitter = ShouldAutoSnapSplitter();
 
 					m_Pinned.RemoveAt(index);
@@ -2030,22 +2090,7 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void CreateScenesPackage()
 		{
-			Scene activeScene = SceneManager.GetActiveScene();
-
-			var packedScenes = new List<PackedSceneState>();
-
-			for (int i = 0; i < SceneManager.sceneCount; ++i) {
-				Scene scene = SceneManager.GetSceneAt(i);
-
-				var packedScene = new PackedSceneState() {
-					Guid = AssetDatabase.AssetPathToGUID(scene.path),
-					Path = scene.path,
-					IsMainScene = scene == activeScene,
-					Loaded = scene.isLoaded,
-				};
-
-				packedScenes.Add(packedScene);
-			}
+			List<PackedSceneState> packedScenes = CreatePackedScenesFromCurrent();
 
 			var guid = SceneEntry.PackedSceneGuidPrefix + GUID.Generate().ToString();
 			var entry = new SceneEntry(guid, packedScenes);
@@ -2068,14 +2113,44 @@ namespace DevLocker.Tools.AssetManagement
 			Repaint();
 		}
 
-		private void LoadPackedScenes(SceneEntry sceneEntry, bool additive)
+		private static List<PackedSceneState> CreatePackedScenesFromCurrent()
 		{
-			EditorSceneManager.OpenScene(AssetDatabase.GUIDToAssetPath(sceneEntry.PackedScenes[0].Guid), additive ? OpenSceneMode.Additive : OpenSceneMode.Single);
+			Scene activeScene = SceneManager.GetActiveScene();
+
+			var packedScenes = new List<PackedSceneState>();
+
+			for (int i = 0; i < SceneManager.sceneCount; ++i) {
+				Scene scene = SceneManager.GetSceneAt(i);
+
+				PackedSceneLoadedState loadedState = scene.isLoaded
+					? PackedSceneLoadedState.Loaded
+					: PackedSceneLoadedState.Unloaded
+					;
+
+				if (scene == activeScene) {
+					loadedState = PackedSceneLoadedState.MainScene;
+				}
+
+				var packedScene = new PackedSceneState() {
+					Guid = AssetDatabase.AssetPathToGUID(scene.path),
+					Path = scene.path,
+					LoadedState = loadedState,
+				};
+
+				packedScenes.Add(packedScene);
+			}
+
+			return packedScenes;
+		}
+
+		private static void LoadPackedScenes(IList<PackedSceneState> packedScenes, bool additive)
+		{
+			EditorSceneManager.OpenScene(AssetDatabase.GUIDToAssetPath(packedScenes[0].Guid), additive ? OpenSceneMode.Additive : OpenSceneMode.Single);
 			int activeSceneIndex = 0;
 
-			for (int i = 1 /* 0 is loaded */; i < sceneEntry.PackedScenes.Length; ++i) {
-				var packedScene = sceneEntry.PackedScenes[i];
-				EditorSceneManager.OpenScene(AssetDatabase.GUIDToAssetPath(packedScene.Guid), packedScene.Loaded ? OpenSceneMode.Additive : OpenSceneMode.AdditiveWithoutLoading);
+			for (int i = 1 /* 0 is loaded */; i < packedScenes.Count; ++i) {
+				var packedScene = packedScenes[i];
+				EditorSceneManager.OpenScene(AssetDatabase.GUIDToAssetPath(packedScene.Guid), packedScene.IsLoaded ? OpenSceneMode.Additive : OpenSceneMode.AdditiveWithoutLoading);
 				if (packedScene.IsMainScene) {
 					activeSceneIndex = i;
 				}
@@ -2087,42 +2162,16 @@ namespace DevLocker.Tools.AssetManagement
 			}
 
 			// First scene could have been unloaded, but we left it loaded.
-			if (!sceneEntry.PackedScenes[0].Loaded) {
+			if (!packedScenes[0].IsLoaded) {
 				EditorSceneManager.CloseScene(SceneManager.GetSceneAt(0), false);
 			}
 		}
 
-		private void ReloadLoadedScenes()
+		private static void ReloadLoadedScenes()
 		{
-			Scene activeScene = SceneManager.GetActiveScene();
-			int activeSceneIndex = 0;
-
-			// Scene structs loose it's data when scene is unloaded, so don't use it.
-			var loadedScenes = new List<KeyValuePair<string, bool>>(SceneManager.sceneCount);
-			for(int i = 0; i < SceneManager.sceneCount; ++i) {
-				Scene scene = SceneManager.GetSceneAt(i);
-
-				loadedScenes.Add(new KeyValuePair<string, bool>(scene.path, scene.isLoaded));
-				if (activeScene == scene) {
-					activeSceneIndex = i;
-				}
-			}
-
-
 			if (EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) {
-				EditorSceneManager.OpenScene(loadedScenes[0].Key, OpenSceneMode.Single);
-
-				for(int i = 1 /* 0 is loaded */; i < loadedScenes.Count; ++i) {
-					EditorSceneManager.OpenScene(loadedScenes[i].Key, loadedScenes[i].Value ? OpenSceneMode.Additive : OpenSceneMode.AdditiveWithoutLoading);
-				}
-
-				// In case the active scene was not the first one.
-				SceneManager.SetActiveScene(SceneManager.GetSceneAt(activeSceneIndex));
-
-				// First scene could have been unloaded, but we left it loaded.
-				if (!loadedScenes[0].Value) {
-					EditorSceneManager.CloseScene(SceneManager.GetSceneAt(0), false);
-				}
+				List<PackedSceneState> packedScenes = CreatePackedScenesFromCurrent();
+				LoadPackedScenes(packedScenes, false);
 			}
 		}
 
@@ -2236,6 +2285,7 @@ namespace DevLocker.Tools.AssetManagement
 		}
 
 		private readonly GUIContent PreferencesColorizePatternsLabelContent = new GUIContent("Colorize Entries", "Set colors of scenes based on a folder or name patterns.");
+		private readonly GUIContent PreferencesScenePacksLabelContent = new GUIContent("Scene Packs", "Set scene packs that will always be available for your teammates to use.");
 		private readonly GUIContent PreferencesExcludePatternsLabelContent = new GUIContent("Exclude Scenes", "Relative path (contains '/') or asset name to be ignored.\nAppend '|' then guid to track the assets when renamed.");
 		private Vector2 m_PreferencesScroll;
 
@@ -2391,6 +2441,18 @@ namespace DevLocker.Tools.AssetManagement
 
 			EditorGUILayout.PropertyField(sp.FindPropertyRelative("ColorizePatterns"), PreferencesColorizePatternsLabelContent, true);
 			EditorGUILayout.PropertyField(sp.FindPropertyRelative("Exclude"), PreferencesExcludePatternsLabelContent, true);
+			EditorGUILayout.PropertyField(sp.FindPropertyRelative("ScenePacks"), PreferencesScenePacksLabelContent, true);
+			if (GUILayout.Button("Add pack from currently loaded scenes")) {
+				var packedPreference = new PackedScenesPreference() {
+					Identifier = GUID.Generate().ToString(),
+					PackedStates = CreatePackedScenesFromCurrent(),
+				};
+
+				var window = (ScenesInProject)m_SerializedObject.targetObject;
+				window.m_ProjectPrefs.ScenePacks.Add(packedPreference);
+				EditorUtility.SetDirty(window);
+				GUIUtility.ExitGUI();
+			}
 
 
 			foreach (var cf in m_ProjectPrefs.ColorizePatterns) {
