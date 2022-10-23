@@ -16,11 +16,13 @@ namespace DevLocker.Tools.AssetManagement
 		private struct Result
 		{
 			public Object TargetObj;
+			public string TargetObjTypeName;
 			public string PropertyName;
 
 			public Result(Object obj, string propertyName)
 			{
 				TargetObj = obj;
+				TargetObjTypeName = obj.GetType().Name;
 				PropertyName = propertyName;
 			}
 		}
@@ -31,11 +33,37 @@ namespace DevLocker.Tools.AssetManagement
 
 		private Vector2 _scrollView = Vector2.zero;
 
+		private GUIContent RefreshButtonContent;
+
 		[MenuItem("GameObject/Find References In Scene", false, 0)]
 		public static void OpenWindow()
 		{
-			var window = GetWindow<FindReferencesInSceneWindow>("Scene References");
+			Vector2 lowestWindowLocation = Vector2.zero;
+
+			var openWindows = Resources.FindObjectsOfTypeAll<FindReferencesInSceneWindow>();
+			foreach(var openWindow in openWindows) {
+				if (openWindow._selectedObject == Selection.activeGameObject) {
+					openWindow.Focus();
+					openWindow.PerformSearch();
+					return;
+				}
+
+				if (lowestWindowLocation.y < openWindow.position.y) {
+					lowestWindowLocation = openWindow.position.position;
+				}
+			}
+
+			var window = CreateInstance<FindReferencesInSceneWindow>();
+			window.titleContent = new GUIContent("Scene References");
 			window._selectedObject = Selection.activeGameObject;
+			window.minSize = new Vector2(350f, 300f);
+			window.ShowUtility();
+
+			if (lowestWindowLocation != Vector2.zero) {
+				lowestWindowLocation += new Vector2(20f, 30f);
+				window.position = new Rect(lowestWindowLocation, window.position.size);
+			}
+
 			window.PerformSearch();
 		}
 
@@ -106,7 +134,18 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void OnGUI()
 		{
+			if (RefreshButtonContent == null) {
+				RefreshButtonContent = new GUIContent(EditorGUIUtility.FindTexture("Refresh"), "Refresh references...");
+			}
+
+			EditorGUILayout.BeginHorizontal();
 			var obj = EditorGUILayout.ObjectField(_selectedObject, typeof(Object), true);
+
+			if (GUILayout.Button(RefreshButtonContent, GUILayout.Width(30f))) {
+				PerformSearch();
+			}
+			EditorGUILayout.EndHorizontal();
+
 			if (_selectedObject != obj) {
 				_selectedObject = obj;
 				PerformSearch();
@@ -122,7 +161,7 @@ namespace DevLocker.Tools.AssetManagement
 
 				var type = result.TargetObj ? result.TargetObj.GetType() : typeof(Object);
 				EditorGUILayout.ObjectField(result.TargetObj, type, true);
-				GUILayout.Label(result.PropertyName, GUILayout.Width(100f));
+				EditorGUILayout.TextField(result.PropertyName, GUILayout.Width(100f));
 
 				EditorGUILayout.EndHorizontal();
 			}
