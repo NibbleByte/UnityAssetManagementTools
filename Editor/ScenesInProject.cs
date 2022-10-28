@@ -921,6 +921,10 @@ namespace DevLocker.Tools.AssetManagement
 		{
 			m_Instances.Remove(this);
 
+			// NOTE: OnDisable() gets called when turning on "Maximize" on the GameView.
+			//		 If "Play Maximized" is on, OnDisables() get called before InitOnPlay() when assembly reload is off.
+			ClearDirectPlayScene();
+
 			if (m_Initialized) {
 				StoreAllScenes();
 			}
