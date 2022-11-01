@@ -1105,7 +1105,7 @@ namespace DevLocker.Tools.AssetManagement
 
 
 #if UNITY_2020_1_OR_NEWER
-			CreatePackageButtonContent = new GUIContent(EditorGUIUtility.FindTexture("d_winbtn_win_restore"), "Create a pack of the currently loaded scenes.");
+			CreatePackageButtonContent = new GUIContent(EditorGUIUtility.FindTexture("winbtn_win_restore"), "Create a pack of the currently loaded scenes.");
 #else
 			CreatePackageButtonContent = new GUIContent(EditorGUIUtility.FindTexture("TerrainInspector.TerrainToolLowerAlt"), "Create a pack of the currently loaded scenes.");
 #endif
