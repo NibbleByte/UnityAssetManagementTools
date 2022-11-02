@@ -312,7 +312,7 @@ namespace DevLocker.Tools.AssetManagement
 		private GUIContent SceneOptionsButtonContent = new GUIContent("\u2261", "Options...");	// \u2261 \u20AA
 
 		private GUIStyle SceneOptionsPackButtonStyle;
-		private GUIContent SceneOptionsPackButtonContent = new GUIContent("*", "Pack options...");
+		private GUIContent SceneOptionsPackButtonContent = new GUIContent("\u205c", "Pack options...");
 
 		private GUIContent ScenePlayButtonContent = new GUIContent("\u25BA", "Play directly");
 		private GUIStyle ScenePlayButtonStyle;
@@ -332,7 +332,8 @@ namespace DevLocker.Tools.AssetManagement
 		private GUIContent PreferencesButtonContent;
 		private GUIContent QuickSortButtonContent;
 		private GUIContent ReloadButtonContent;
-		private GUIContent CreatePackageButtonContent;
+		private GUIStyle CreatePackageButtonStyle;
+		private GUIContent CreatePackageButtonContent = new GUIContent("\u205c", "Create a pack from the currently loaded scenes.\nPacks bundle scenes to be loaded together.");
 
 		internal static bool AssetsChanged = false;
 
@@ -1063,9 +1064,21 @@ namespace DevLocker.Tools.AssetManagement
 			SceneOptionsPackButtonStyle = new GUIStyle(GUI.skin.button);
 			SceneOptionsPackButtonStyle.alignment = TextAnchor.MiddleCenter;
 #if UNITY_2019_1_OR_NEWER
-			SceneOptionsPackButtonStyle.padding = new RectOffset(2, 2, 2, 1);
+			SceneOptionsPackButtonStyle.padding = new RectOffset(0, 0, -4, 0);
+			SceneOptionsPackButtonStyle.fontSize = 19;
 #else
-			SceneOptionsPackButtonStyle.padding = new RectOffset(2, 2, 0, 0);
+			SceneOptionsPackButtonStyle.padding = new RectOffset(2, 0, -2, 0);
+			SceneOptionsPackButtonStyle.fontSize = 17;
+#endif
+
+			CreatePackageButtonStyle = new GUIStyle(EditorStyles.toolbarButton);
+			CreatePackageButtonStyle.alignment = TextAnchor.MiddleCenter;
+#if UNITY_2019_1_OR_NEWER
+			CreatePackageButtonStyle.padding = new RectOffset(3, 0, -4, 1);
+			CreatePackageButtonStyle.fontSize = 20;
+#else
+			CreatePackageButtonStyle.padding = new RectOffset(4, 0, -2, 0);
+			CreatePackageButtonStyle.fontSize = 17;
 #endif
 
 			ScenePlayButtonStyle = new GUIStyle(GUI.skin.GetStyle("ButtonLeft"));
@@ -1102,14 +1115,6 @@ namespace DevLocker.Tools.AssetManagement
 			PreferencesButtonContent = new GUIContent(EditorGUIUtility.FindTexture("Settings"), "Preferences...");
 			QuickSortButtonContent = new GUIContent(EditorGUIUtility.FindTexture("CustomSorting"), "Quick sort scenes");
 			ReloadButtonContent = new GUIContent(EditorGUIUtility.FindTexture("Refresh"), "Reload currently loaded scenes");
-
-
-#if UNITY_2020_1_OR_NEWER
-			CreatePackageButtonContent = new GUIContent(EditorGUIUtility.FindTexture("winbtn_win_restore"), "Create a pack of the currently loaded scenes.");
-#else
-			CreatePackageButtonContent = new GUIContent(EditorGUIUtility.FindTexture("TerrainInspector.TerrainToolLowerAlt"), "Create a pack of the currently loaded scenes.");
-#endif
-			SceneOptionsPackButtonContent = new GUIContent(CreatePackageButtonContent.image, SceneOptionsPackButtonContent.tooltip);
 		}
 
 		private void SynchronizeInstancesToMe()
@@ -1212,7 +1217,7 @@ namespace DevLocker.Tools.AssetManagement
 
 			EditorGUI.BeginDisabledGroup(Application.isPlaying);
 
-			if (GUILayout.Button(CreatePackageButtonContent, ToolbarButtonStyle, GUILayout.Width(25.0f))) {
+			if (GUILayout.Button(CreatePackageButtonContent, CreatePackageButtonStyle, GUILayout.Width(25.0f))) {
 				if (SceneManager.sceneCount == 1) {
 					EditorUtility.DisplayDialog("Create Pack of Scenes", "You need to have one or more scenes loaded additively.", "Ok");
 				} else {
@@ -1578,6 +1583,11 @@ namespace DevLocker.Tools.AssetManagement
 					= SceneOptionsButtonStyle.hover.textColor
 					= SceneOptionsButtonStyle.active.textColor
 					= SceneOptionsButtonStyle.focused.textColor
+
+					= SceneOptionsPackButtonStyle.normal.textColor
+					= SceneOptionsPackButtonStyle.hover.textColor
+					= SceneOptionsPackButtonStyle.active.textColor
+					= SceneOptionsPackButtonStyle.focused.textColor
 
 					= ScenePlayButtonStyle.normal.textColor
 					= ScenePlayButtonStyle.hover.textColor
