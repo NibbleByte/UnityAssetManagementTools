@@ -335,6 +335,8 @@ namespace DevLocker.Tools.AssetManagement
 		private GUIStyle CreatePackageButtonStyle;
 		private GUIContent CreatePackageButtonContent = new GUIContent("\u205c", "Create a pack from the currently loaded scenes.\nPacks bundle scenes to be loaded together.");
 
+		private GUIStyle[] m_SceneButtonStyles = null;
+
 		internal static bool AssetsChanged = false;
 
 		// Used to synchronize instances.
@@ -1115,6 +1117,15 @@ namespace DevLocker.Tools.AssetManagement
 			PreferencesButtonContent = new GUIContent(EditorGUIUtility.FindTexture("Settings"), "Preferences...");
 			QuickSortButtonContent = new GUIContent(EditorGUIUtility.FindTexture("CustomSorting"), "Quick sort scenes");
 			ReloadButtonContent = new GUIContent(EditorGUIUtility.FindTexture("Refresh"), "Reload currently loaded scenes");
+
+
+			m_SceneButtonStyles = new GUIStyle[] {
+				SceneButtonStyle,
+				SceneOptionsButtonStyle,
+				SceneOptionsPackButtonStyle,
+				ScenePlayButtonStyle,
+				SceneLoadedButtonStyle
+			};
 		}
 
 		private void SynchronizeInstancesToMe()
@@ -1146,6 +1157,11 @@ namespace DevLocker.Tools.AssetManagement
 		private void OnGUI()
 		{
 			m_SerializedObject.Update();
+
+			// In case of upgrade while running.
+			if (m_SceneButtonStyles == null && m_Initialized) {
+				m_Initialized = false;
+			}
 
 			// Initialize on demand (not on OnEnable), to make sure everything is up and running.
 			if (!m_Initialized || AssetsChanged) {
@@ -1574,33 +1590,15 @@ namespace DevLocker.Tools.AssetManagement
 					GUI.backgroundColor += new Color(0.4f, 0.4f, 0.4f, 0f);
 				}
 
-				SceneButtonStyle.normal.textColor
-					= SceneButtonStyle.hover.textColor
-					= SceneButtonStyle.active.textColor
-					= SceneButtonStyle.focused.textColor
+				GUI.contentColor = textColor;
 
-					= SceneOptionsButtonStyle.normal.textColor
-					= SceneOptionsButtonStyle.hover.textColor
-					= SceneOptionsButtonStyle.active.textColor
-					= SceneOptionsButtonStyle.focused.textColor
-
-					= SceneOptionsPackButtonStyle.normal.textColor
-					= SceneOptionsPackButtonStyle.hover.textColor
-					= SceneOptionsPackButtonStyle.active.textColor
-					= SceneOptionsPackButtonStyle.focused.textColor
-
-					= ScenePlayButtonStyle.normal.textColor
-					= ScenePlayButtonStyle.hover.textColor
-					= ScenePlayButtonStyle.active.textColor
-					= ScenePlayButtonStyle.focused.textColor
-
-					= SceneLoadedButtonStyle.normal.textColor
-					= SceneLoadedButtonStyle.hover.textColor
-					= SceneLoadedButtonStyle.active.textColor
-					= SceneLoadedButtonStyle.focused.textColor
-
-					= GUI.contentColor
+				foreach(GUIStyle style in m_SceneButtonStyles) {
+					style.normal.textColor
+					= style.hover.textColor
+					= style.active.textColor
+					= style.focused.textColor
 					= textColor;
+				}
 			}
 
 			if (sceneEntry == m_DraggedEntity) {
@@ -1633,28 +1631,16 @@ namespace DevLocker.Tools.AssetManagement
 			}
 
 			GUI.backgroundColor = prevBackgroundColor;
-			SceneButtonStyle.normal.textColor
-				= SceneButtonStyle.hover.textColor
-				= SceneButtonStyle.active.textColor
-				= SceneButtonStyle.focused.textColor
 
-				= SceneOptionsButtonStyle.normal.textColor
-				= SceneOptionsButtonStyle.hover.textColor
-				= SceneOptionsButtonStyle.active.textColor
-				= SceneOptionsButtonStyle.focused.textColor
+			GUI.contentColor = prevColor;
 
-				= ScenePlayButtonStyle.normal.textColor
-				= ScenePlayButtonStyle.hover.textColor
-				= ScenePlayButtonStyle.active.textColor
-				= ScenePlayButtonStyle.focused.textColor
-
-				= SceneLoadedButtonStyle.normal.textColor
-				= SceneLoadedButtonStyle.hover.textColor
-				= SceneLoadedButtonStyle.active.textColor
-				= SceneLoadedButtonStyle.focused.textColor
-
-				= GUI.contentColor
+			foreach (GUIStyle style in m_SceneButtonStyles) {
+				style.normal.textColor
+				= style.hover.textColor
+				= style.active.textColor
+				= style.focused.textColor
 				= prevColor;
+			}
 
 			if (scenePressed || optionsPressed || playPressed || loadPressed) {
 				// If scene was removed outside of Unity, the AssetModificationProcessor would not get notified.
