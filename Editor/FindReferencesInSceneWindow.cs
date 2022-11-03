@@ -3,7 +3,6 @@
 using System;
 using System.Collections.Generic;
 using UnityEditor;
-using UnityEditor.Experimental.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using Object = UnityEngine.Object;
@@ -84,7 +83,11 @@ namespace DevLocker.Tools.AssetManagement
 				}
 			}
 
-			PrefabStage prefabStage = PrefabStageUtility.GetPrefabStage(selectedGO);
+#if UNITY_2019_4_OR_NEWER
+			UnityEditor.SceneManagement.PrefabStage prefabStage = UnityEditor.SceneManagement.PrefabStageUtility.GetPrefabStage(selectedGO);
+#else
+			UnityEditor.Experimental.SceneManagement.PrefabStage prefabStage = UnityEditor.Experimental.SceneManagement.PrefabStageUtility.GetPrefabStage(selectedGO);
+#endif		
 
 			if (prefabStage == null) {
 				for (int i = 0; i < SceneManager.sceneCount; ++i) {
