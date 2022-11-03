@@ -335,7 +335,15 @@ namespace DevLocker.Tools.AssetManagement
 		private GUIStyle CreatePackageButtonStyle;
 		private GUIContent CreatePackageButtonContent = new GUIContent("\u205c", "Create a pack from the currently loaded scenes.\nPacks bundle scenes to be loaded together.");
 
-		private GUIStyle[] m_SceneButtonStyles = null;
+		private IEnumerable<GUIStyle> m_SceneButtonStyles {
+			get {
+				yield return SceneButtonStyle;
+				yield return SceneOptionsButtonStyle;
+				yield return SceneOptionsPackButtonStyle;
+				yield return ScenePlayButtonStyle;
+				yield return SceneLoadedButtonStyle;
+			}
+		}
 
 		internal static bool AssetsChanged = false;
 
@@ -1117,15 +1125,6 @@ namespace DevLocker.Tools.AssetManagement
 			PreferencesButtonContent = new GUIContent(EditorGUIUtility.FindTexture("Settings"), "Preferences...");
 			QuickSortButtonContent = new GUIContent(EditorGUIUtility.FindTexture("CustomSorting"), "Quick sort scenes");
 			ReloadButtonContent = new GUIContent(EditorGUIUtility.FindTexture("Refresh"), "Reload currently loaded scenes");
-
-
-			m_SceneButtonStyles = new GUIStyle[] {
-				SceneButtonStyle,
-				SceneOptionsButtonStyle,
-				SceneOptionsPackButtonStyle,
-				ScenePlayButtonStyle,
-				SceneLoadedButtonStyle
-			};
 		}
 
 		private void SynchronizeInstancesToMe()
@@ -1159,7 +1158,7 @@ namespace DevLocker.Tools.AssetManagement
 			m_SerializedObject.Update();
 
 			// In case of upgrade while running.
-			if (m_SceneButtonStyles == null && m_Initialized) {
+			if (SceneOptionsPackButtonStyle == null && m_Initialized) {
 				m_Initialized = false;
 			}
 
@@ -2335,6 +2334,8 @@ namespace DevLocker.Tools.AssetManagement
 					break;
 			}
 
+			GUILayout.Space(12f);
+
 			EditorGUILayout.EndScrollView();
 		}
 
@@ -2443,6 +2444,11 @@ namespace DevLocker.Tools.AssetManagement
 			EditorGUILayout.PropertyField(sp.FindPropertyRelative("Exclude"), PreferencesExcludePatternsLabelContent, true);
 			EditorGUILayout.PropertyField(sp.FindPropertyRelative("ScenePacks"), PreferencesScenePacksLabelContent, true);
 			if (GUILayout.Button("Add pack from currently loaded scenes")) {
+				if (SceneManager.sceneCount == 1) {
+					EditorUtility.DisplayDialog("Create Pack of Scenes", "You need to have one or more scenes loaded additively.", "Ok");
+					GUIUtility.ExitGUI();
+				}
+
 				var packedPreference = new PackedScenesPreference() {
 					Identifier = GUID.Generate().ToString(),
 					PackedStates = CreatePackedScenesFromCurrent(),
@@ -2453,7 +2459,6 @@ namespace DevLocker.Tools.AssetManagement
 				EditorUtility.SetDirty(window);
 				GUIUtility.ExitGUI();
 			}
-
 
 			foreach (var cf in m_ProjectPrefs.ColorizePatterns) {
 				if (string.IsNullOrEmpty(cf.Patterns)) {
