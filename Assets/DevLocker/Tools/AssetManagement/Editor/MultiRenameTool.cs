@@ -216,27 +216,28 @@ namespace DevLocker.Tools.AssetManagement
 				EditorGUI.EndDisabledGroup();
 			}
 
+			Rect searchToggleRect;
 			{
 				EditorGUI.BeginDisabledGroup(!_searchPatternEnabled);
 				var labelContent = new GUIContent("Search Pattern", "Searched text in the objects' names.\nDisable to match any names.");
 				_searchPattern = TextFieldWithPlaceholder(labelContent, _searchPattern, _useCounters ? "Use \\d to match any numbers..." : "");
 				EditorGUI.EndDisabledGroup();
 
-				Rect rect = GUILayoutUtility.GetLastRect();
-				rect.x += EditorGUIUtility.labelWidth - 18f;
-				_searchPatternEnabled = EditorGUI.Toggle(rect, _searchPatternEnabled);
-
+				searchToggleRect = GUILayoutUtility.GetLastRect();
+				searchToggleRect.x += EditorGUIUtility.labelWidth - 18f;
+				//_searchPatternEnabled = EditorGUI.Toggle(searchToggleRect, _searchPatternEnabled);
 			}
 
+			Rect replaceToggleRect;
 			{
 				EditorGUI.BeginDisabledGroup(!_replacePatternEnabled);
 				var labelContent = new GUIContent("Replace Pattern", "Replace the searched part of the objects' names.\nDisable to leave final names untouched. Useful with prefix / suffix.");
 				_replacePattern = TextFieldWithPlaceholder(labelContent, _replacePattern, _useCounters ? "Use \\d to insert number..." : "");
 				EditorGUI.EndDisabledGroup();
 
-				Rect rect = GUILayoutUtility.GetLastRect();
-				rect.x += EditorGUIUtility.labelWidth - 18f;
-				_replacePatternEnabled = EditorGUI.Toggle(rect, _replacePatternEnabled);
+				replaceToggleRect = GUILayoutUtility.GetLastRect();
+				replaceToggleRect.x += EditorGUIUtility.labelWidth - 18f;
+				//_replacePatternEnabled = EditorGUI.Toggle(replaceToggleRect, _replacePatternEnabled);
 			}
 
 
@@ -245,6 +246,10 @@ namespace DevLocker.Tools.AssetManagement
 			_prefix = EditorGUILayout.TextField(_prefix);
 			_suffix = EditorGUILayout.TextField(_suffix);
 			EditorGUILayout.EndHorizontal();
+
+			// HACK: Don't draw this in-between text fields to avoid hijacking tab-key focus.
+			_searchPatternEnabled = EditorGUI.Toggle(searchToggleRect, _searchPatternEnabled);
+			_replacePatternEnabled = EditorGUI.Toggle(replaceToggleRect, _replacePatternEnabled);
 
 			var prevLabelWidth = EditorGUIUtility.labelWidth;
 
