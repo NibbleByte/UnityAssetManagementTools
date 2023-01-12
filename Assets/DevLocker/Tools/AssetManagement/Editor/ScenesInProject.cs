@@ -2091,6 +2091,10 @@ namespace DevLocker.Tools.AssetManagement
 		{
 			List<PackedSceneState> packedScenes = CreatePackedScenesFromCurrent();
 
+			if (packedScenes.Count <= 1) {
+				GUIUtility.ExitGUI();
+			}
+
 			var guid = SceneEntry.PackedSceneGuidPrefix + GUID.Generate().ToString();
 			var entry = new SceneEntry(guid, packedScenes);
 
@@ -2136,7 +2140,18 @@ namespace DevLocker.Tools.AssetManagement
 					LoadedState = loadedState,
 				};
 
+				// "Unknown" unsaved scenes.
+				if (string.IsNullOrEmpty(packedScene.Guid))
+					continue;
+
 				packedScenes.Add(packedScene);
+			}
+
+			// This can happen if the "Unknown" unsaved scene is the main one.
+			if (!packedScenes.Any(ps => ps.IsMainScene) && packedScenes.Count > 0) {
+				PackedSceneState packedScene = packedScenes[0];
+				packedScene.LoadedState = PackedSceneLoadedState.MainScene;
+				packedScenes[0] = packedScene;
 			}
 
 			return packedScenes;
@@ -2144,12 +2159,20 @@ namespace DevLocker.Tools.AssetManagement
 
 		private static void LoadPackedScenes(IList<PackedSceneState> packedScenes, bool additive)
 		{
-			EditorSceneManager.OpenScene(AssetDatabase.GUIDToAssetPath(packedScenes[0].Guid), additive ? OpenSceneMode.Additive : OpenSceneMode.Single);
+			string scenePath = AssetDatabase.GUIDToAssetPath(packedScenes[0].Guid);
+			if (string.IsNullOrEmpty(scenePath))
+				return;
+
+			EditorSceneManager.OpenScene(scenePath, additive ? OpenSceneMode.Additive : OpenSceneMode.Single);
 			int activeSceneIndex = 0;
 
 			for (int i = 1 /* 0 is loaded */; i < packedScenes.Count; ++i) {
 				var packedScene = packedScenes[i];
-				EditorSceneManager.OpenScene(AssetDatabase.GUIDToAssetPath(packedScene.Guid), packedScene.IsLoaded ? OpenSceneMode.Additive : OpenSceneMode.AdditiveWithoutLoading);
+				scenePath = AssetDatabase.GUIDToAssetPath(packedScene.Guid);
+				if (string.IsNullOrEmpty(scenePath))
+					continue;
+
+				EditorSceneManager.OpenScene(scenePath, packedScene.IsLoaded ? OpenSceneMode.Additive : OpenSceneMode.AdditiveWithoutLoading);
 				if (packedScene.IsMainScene) {
 					activeSceneIndex = i;
 				}
@@ -2453,6 +2476,10 @@ namespace DevLocker.Tools.AssetManagement
 					Identifier = GUID.Generate().ToString(),
 					PackedStates = CreatePackedScenesFromCurrent(),
 				};
+
+				if (packedPreference.PackedStates.Count <= 1) {
+					GUIUtility.ExitGUI();
+				}
 
 				var window = (ScenesInProject)m_SerializedObject.targetObject;
 				window.m_ProjectPrefs.ScenePacks.Add(packedPreference);
