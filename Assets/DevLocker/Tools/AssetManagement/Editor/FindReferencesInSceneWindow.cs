@@ -17,15 +17,24 @@ namespace DevLocker.Tools.AssetManagement
 		private struct Result
 		{
 			public Object TargetObj;
+			public int GameObjectInstanceID;
 			public string TargetObjTypeName;
 			public string PropertyName;
 
-			public Result(Object obj, string propertyName)
+			public Result(Object obj, int instanceId, string propertyName)
 			{
 				TargetObj = obj;
+				GameObjectInstanceID = instanceId;
 				TargetObjTypeName = obj.GetType().Name;
 				PropertyName = propertyName;
 			}
+		}
+
+		[Serializable]
+		private struct HierarchySummaryResult
+		{
+			public int GameObjectInstanceID;
+			public string Summary;
 		}
 
 		[Flags]
@@ -54,6 +63,7 @@ namespace DevLocker.Tools.AssetManagement
 		private bool m_LockSelection = false;
 
 		private List<Result> m_References = new List<Result>();
+		private List<HierarchySummaryResult> m_HierarchyReferences = new List<HierarchySummaryResult>();
 
 		private Vector2 m_ScrollView = Vector2.zero;
 
@@ -61,6 +71,7 @@ namespace DevLocker.Tools.AssetManagement
 		private GUIContent TrackSelectionButtonContent;
 		private GUIContent LockToggleOnContent;
 		private GUIContent LockToggleOffContent;
+		private GUIStyle HierarchyUsedByStyle;
 
 		[MenuItem("GameObject/Find Used By In Scene", false, -1)]
 		public static void OpenWindow()
@@ -76,6 +87,9 @@ namespace DevLocker.Tools.AssetManagement
 			m_SelectionTracking = (SelectionTrackingType)EditorPrefs.GetInt("DevLocker.UsedBy.SelectionTracking", (int) SelectionTrackingType.SceneObjects);
 
 			Selection.selectionChanged += OnSelectionChange;
+			EditorApplication.hierarchyWindowItemOnGUI += OnHierarchyWindowItemOnGUI;
+
+			EditorApplication.RepaintHierarchyWindow();
 		}
 
 		void OnDisable()
@@ -83,6 +97,9 @@ namespace DevLocker.Tools.AssetManagement
 			EditorPrefs.SetInt("DevLocker.UsedBy.SelectionTracking", (int)m_SelectionTracking);
 
 			Selection.selectionChanged -= OnSelectionChange;
+			EditorApplication.hierarchyWindowItemOnGUI -= OnHierarchyWindowItemOnGUI;
+
+			EditorApplication.RepaintHierarchyWindow();
 		}
 
 		private void OnSelectionChange()
@@ -120,12 +137,31 @@ namespace DevLocker.Tools.AssetManagement
 			}
 		}
 
+		private void OnHierarchyWindowItemOnGUI(int instanceID, Rect selectionRect)
+		{
+			foreach(HierarchySummaryResult result in m_HierarchyReferences) {
+				if (result.GameObjectInstanceID == instanceID) {
+
+					Color prevColor = GUI.color;
+					GUI.color = new Color(0.9f, 0.6f, 0.3f, 0.3f);
+
+					GUI.Box(selectionRect, new GUIContent("", result.Summary), HierarchyUsedByStyle);
+
+					GUI.color = prevColor;
+
+					break;
+				}
+			}
+		}
+
 		private bool TrySelect(Object obj)
 		{
 			if (obj && m_SelectedObject != obj) {
 				m_SelectionHistoryIndex = m_SelectionHistory.Count;
 				m_SelectionHistory.Add(obj);
 				PerformSearch();
+
+				EditorApplication.RepaintHierarchyWindow();
 
 				return true;
 			}
@@ -136,6 +172,7 @@ namespace DevLocker.Tools.AssetManagement
 		private void PerformSearch()
 		{
 			m_References.Clear();
+			m_HierarchyReferences.Clear();
 
 			if (m_SelectedObject == null)
 				return;
@@ -165,10 +202,26 @@ namespace DevLocker.Tools.AssetManagement
 			} else {
 				SearchSelected(prefabStage.prefabContentsRoot);
 			}
+
+
+			// If found targets are child game objects, ping them so they show up in the Hierarchy (to be painted).
+			if (m_References.Count > 0) {
+				Result childResult = m_References.FirstOrDefault(r =>
+					r.TargetObj is GameObject rgo && rgo.transform.IsChildOf(selectedGO.transform) && rgo != selectedGO
+					|| r.TargetObj is Component rc && rc.transform.IsChildOf(selectedGO.transform) && rc.gameObject != selectedGO
+				);
+
+				if (childResult.TargetObj) {
+					EditorGUIUtility.PingObject(childResult.TargetObj);
+				}
+			}
 		}
 
 		private void SearchSelected(GameObject go)
 		{
+			var hierarchyResults = new Dictionary<int, HierarchySummaryResult>();
+			HierarchySummaryResult hierarchyResult;
+
 			var components = go.GetComponentsInChildren<Component>(true);
 			foreach (var component in components) {
 
@@ -186,19 +239,36 @@ namespace DevLocker.Tools.AssetManagement
 							continue;
 
 						if (sp.objectReferenceValue == m_SelectedObject) {
-							m_References.Add(new Result(component, sp.displayName));
+							int instanceId = component.gameObject.GetInstanceID();
+							m_References.Add(new Result(component, instanceId, sp.propertyPath));
+
+							hierarchyResults.TryGetValue(instanceId, out hierarchyResult);
+							hierarchyResult.GameObjectInstanceID = instanceId;
+							hierarchyResult.Summary += $"{component.GetType().Name}.{sp.propertyPath}\n";
+							hierarchyResults[instanceId] = hierarchyResult;
 							break;
 						}
 
 						if (m_SelectedObject is GameObject && sp.objectReferenceValue is Component targetComponent) {
 							if (targetComponent && targetComponent.gameObject == m_SelectedObject) {
-								m_References.Add(new Result(component, sp.displayName));
+								int instanceId = component.gameObject.GetInstanceID();
+								m_References.Add(new Result(component, instanceId, sp.propertyPath));
+
+								hierarchyResults.TryGetValue(instanceId, out hierarchyResult);
+								hierarchyResult.GameObjectInstanceID = instanceId;
+								hierarchyResult.Summary += $"{component.GetType().Name}.{sp.propertyPath}\n";
+								hierarchyResults[instanceId] = hierarchyResult;
 								break;
 							}
 						}
 					}
 				}
 			}
+
+			m_HierarchyReferences.AddRange(hierarchyResults.Values.Select(r => {
+				r.Summary = $"Used by {r.Summary.Count(c => c == '\n')} components:\n" + r.Summary.Trim();
+				return r;
+			}));
 		}
 
 		private void SelectPrevious()
@@ -238,6 +308,9 @@ namespace DevLocker.Tools.AssetManagement
 				TrackSelectionButtonContent = new GUIContent(EditorGUIUtility.FindTexture("animationvisibilitytoggleon"), "Track selection for...");
 				LockToggleOffContent = new GUIContent(EditorGUIUtility.IconContent("IN LockButton").image, "Don't track Unity selection (manually drag in object)");
 				LockToggleOnContent = new GUIContent(EditorGUIUtility.IconContent("IN LockButton on").image, LockToggleOffContent.tooltip);
+
+				HierarchyUsedByStyle = new GUIStyle();
+				HierarchyUsedByStyle.normal.background = Texture2D.whiteTexture;
 			}
 
 			GUILayout.Label($"Selection:", EditorStyles.boldLabel);
