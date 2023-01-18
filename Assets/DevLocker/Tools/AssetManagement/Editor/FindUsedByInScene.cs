@@ -11,7 +11,7 @@ using Object = UnityEngine.Object;
 
 namespace DevLocker.Tools.AssetManagement
 {
-	public class FindReferencesInSceneWindow : EditorWindow
+	public class FindUsedByInScene : EditorWindow
 	{
 		[Serializable]
 		private struct Result
@@ -73,10 +73,10 @@ namespace DevLocker.Tools.AssetManagement
 		private GUIContent LockToggleOffContent;
 		private GUIStyle HierarchyUsedByStyle;
 
-		[MenuItem("GameObject/Find Used By In Scene", false, -1)]
+		[MenuItem("GameObject/-= Find Used By In Scene =-", false, 0)]
 		public static void OpenWindow()
 		{
-			var window = GetWindow<FindReferencesInSceneWindow>("Used By ...");
+			var window = GetWindow<FindUsedByInScene>("Used By ...");
 			window.minSize = new Vector2(150f, 200f);
 
 			window.TrySelect(Selection.activeGameObject);
