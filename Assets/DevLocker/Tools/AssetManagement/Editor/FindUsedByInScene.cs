@@ -182,14 +182,21 @@ namespace DevLocker.Tools.AssetManagement
 				if (m_SelectedObject is Component) {
 					selectedGO = ((Component) m_SelectedObject).gameObject;
 				} else {
-					return;
+					// Can have selected asset instead.
+					//return;
 				}
 			}
 
 #if UNITY_2019_4_OR_NEWER
-			UnityEditor.SceneManagement.PrefabStage prefabStage = UnityEditor.SceneManagement.PrefabStageUtility.GetPrefabStage(selectedGO);
+			UnityEditor.SceneManagement.PrefabStage prefabStage = selectedGO
+				? UnityEditor.SceneManagement.PrefabStageUtility.GetPrefabStage(selectedGO)
+				: UnityEditor.SceneManagement.PrefabStageUtility.GetCurrentPrefabStage()
+				;
 #else
-			UnityEditor.Experimental.SceneManagement.PrefabStage prefabStage = UnityEditor.Experimental.SceneManagement.PrefabStageUtility.GetPrefabStage(selectedGO);
+			UnityEditor.Experimental.SceneManagement.PrefabStage prefabStage = selectedGO
+				? UnityEditor.Experimental.SceneManagement.PrefabStageUtility.GetPrefabStage(selectedGO)
+				: UnityEditor.Experimental.SceneManagement.PrefabStageUtility.GetCurrentPrefabStage()
+				;
 #endif
 
 			if (prefabStage == null) {
@@ -205,7 +212,7 @@ namespace DevLocker.Tools.AssetManagement
 
 
 			// If found targets are child game objects, ping them so they show up in the Hierarchy (to be painted).
-			if (m_References.Count > 0) {
+			if (selectedGO && m_References.Count > 0) {
 				Result childResult = m_References.FirstOrDefault(r =>
 					r.TargetObj is GameObject rgo && rgo.transform.IsChildOf(selectedGO.transform) && rgo != selectedGO
 					|| r.TargetObj is Component rc && rc.transform.IsChildOf(selectedGO.transform) && rc.gameObject != selectedGO
