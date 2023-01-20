@@ -139,7 +139,11 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void OnHierarchyWindowItemOnGUI(int instanceID, Rect selectionRect)
 		{
-			foreach(HierarchySummaryResult result in m_HierarchyReferences) {
+			if (RefreshButtonContent == null) {
+				InitStyles();
+			}
+
+			foreach (HierarchySummaryResult result in m_HierarchyReferences) {
 				if (result.GameObjectInstanceID == instanceID) {
 
 					Color prevColor = GUI.color;
@@ -308,16 +312,21 @@ namespace DevLocker.Tools.AssetManagement
 			Repaint();
 		}
 
+		private void InitStyles()
+		{
+			RefreshButtonContent = new GUIContent(EditorGUIUtility.FindTexture("Refresh"), "Refresh references...");
+			TrackSelectionButtonContent = new GUIContent(EditorGUIUtility.FindTexture("animationvisibilitytoggleon"), "Track selection for...");
+			LockToggleOffContent = new GUIContent(EditorGUIUtility.IconContent("IN LockButton").image, "Don't track Unity selection (manually drag in object)");
+			LockToggleOnContent = new GUIContent(EditorGUIUtility.IconContent("IN LockButton on").image, LockToggleOffContent.tooltip);
+
+			HierarchyUsedByStyle = new GUIStyle();
+			HierarchyUsedByStyle.normal.background = Texture2D.whiteTexture;
+		}
+
 		private void OnGUI()
 		{
 			if (RefreshButtonContent == null) {
-				RefreshButtonContent = new GUIContent(EditorGUIUtility.FindTexture("Refresh"), "Refresh references...");
-				TrackSelectionButtonContent = new GUIContent(EditorGUIUtility.FindTexture("animationvisibilitytoggleon"), "Track selection for...");
-				LockToggleOffContent = new GUIContent(EditorGUIUtility.IconContent("IN LockButton").image, "Don't track Unity selection (manually drag in object)");
-				LockToggleOnContent = new GUIContent(EditorGUIUtility.IconContent("IN LockButton on").image, LockToggleOffContent.tooltip);
-
-				HierarchyUsedByStyle = new GUIStyle();
-				HierarchyUsedByStyle.normal.background = Texture2D.whiteTexture;
+				InitStyles();
 			}
 
 			GUILayout.Label($"Selection:", EditorStyles.boldLabel);
