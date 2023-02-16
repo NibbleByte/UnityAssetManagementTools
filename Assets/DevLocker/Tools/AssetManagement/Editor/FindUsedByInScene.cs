@@ -216,16 +216,17 @@ namespace DevLocker.Tools.AssetManagement
 
 
 			// If found targets are child game objects, ping them so they show up in the Hierarchy (to be painted).
-			if (selectedGO && m_References.Count > 0) {
-				Result childResult = m_References.FirstOrDefault(r =>
-					r.TargetObj is GameObject rgo && rgo.transform.IsChildOf(selectedGO.transform) && rgo != selectedGO
-					|| r.TargetObj is Component rc && rc.transform.IsChildOf(selectedGO.transform) && rc.gameObject != selectedGO
-				);
-
-				if (childResult.TargetObj) {
-					EditorGUIUtility.PingObject(childResult.TargetObj);
-				}
-			}
+			// EDIT: This was too annoying...
+			//if (selectedGO && m_References.Count > 0) {
+			//	Result childResult = m_References.FirstOrDefault(r =>
+			//		r.TargetObj is GameObject rgo && rgo.transform.IsChildOf(selectedGO.transform) && rgo != selectedGO
+			//		|| r.TargetObj is Component rc && rc.transform.IsChildOf(selectedGO.transform) && rc.gameObject != selectedGO
+			//	);
+			//
+			//	if (childResult.TargetObj) {
+			//		EditorGUIUtility.PingObject(childResult.TargetObj);
+			//	}
+			//}
 		}
 
 		private void SearchSelected(GameObject go)
