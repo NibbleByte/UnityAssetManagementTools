@@ -76,6 +76,9 @@ namespace DevLocker.Tools.AssetManagement
 		private GUIStyle UrlStyle;
 		private GUIStyle ResultPropertyStyle;
 
+		private System.Diagnostics.Stopwatch m_SearchStopwatch = new System.Diagnostics.Stopwatch();
+		private bool SearchIsSlow => m_SearchStopwatch.ElapsedMilliseconds > 0.4f * 1000;
+
 		[MenuItem("GameObject/-= Find Used By In Scene =-", false, 0)]
 		public static void OpenWindow()
 		{
@@ -206,15 +209,33 @@ namespace DevLocker.Tools.AssetManagement
 				;
 #endif
 
-			if (prefabStage == null) {
-				for (int i = 0; i < SceneManager.sceneCount; ++i) {
-					foreach (var go in SceneManager.GetSceneAt(i).GetRootGameObjects()) {
-						SearchSelected(go);
+			m_SearchStopwatch.Restart();
+
+			try {
+				if (prefabStage == null) {
+					List<GameObject> allObjects = new List<GameObject>();
+
+					for (int i = 0; i < SceneManager.sceneCount; ++i) {
+						allObjects.AddRange(SceneManager.GetSceneAt(i).GetRootGameObjects());
 					}
+
+					for(int i = 0; i < allObjects.Count; ++i) {
+						SearchSelected(allObjects[i], (float)i / allObjects.Count, 1f / allObjects.Count);
+					}
+
+				} else {
+					SearchSelected(prefabStage.prefabContentsRoot, 0f, 1f);
 				}
 
-			} else {
-				SearchSelected(prefabStage.prefabContentsRoot);
+			} catch(OperationCanceledException) {
+				m_References.Clear();
+				m_HierarchyReferences.Clear();
+			}
+			finally {
+				if (SearchIsSlow) {
+					EditorUtility.ClearProgressBar();
+				}
+				m_SearchStopwatch.Stop();
 			}
 
 
@@ -232,20 +253,39 @@ namespace DevLocker.Tools.AssetManagement
 			//}
 		}
 
-		private void SearchSelected(GameObject go)
+		private void SearchSelected(GameObject go, float progress, float progressStepRange)
 		{
 			var hierarchyResults = new Dictionary<int, HierarchySummaryResult>();
 			HierarchySummaryResult hierarchyResult;
 
+			if (SearchIsSlow) {
+				if (EditorUtility.DisplayCancelableProgressBar("Find Used By In Scene", $"Searching \"{go.name}\"...", progress)) {
+					throw new OperationCanceledException();
+				}
+			}
+
 			var components = go.GetComponentsInChildren<Component>(true);
-			foreach (var component in components) {
+			for(int i = 0; i < components.Length; ++i) {
+				Component component = components[i];
 
 				// Could be missing component.
 				if (component == null)
 					continue;
 
+				if (component is Transform || component is CanvasRenderer)
+					continue;
+
+				if (SearchIsSlow) {
+					if (EditorUtility.DisplayCancelableProgressBar("Find Used By In Scene", $"Searching \"{component.name}\"...", progress + ((float)i / components.Length) * progressStepRange)) {
+						throw new OperationCanceledException();
+					}
+				}
+
 				SerializedObject so = new SerializedObject(component);
 				var sp = so.GetIterator();
+
+				// For testing out the progress bar.
+				//System.Threading.Thread.Sleep(500);
 
 				// Iterate over the components' properties.
 				while (sp.NextVisible(true)) {
