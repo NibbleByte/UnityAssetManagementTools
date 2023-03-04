@@ -75,6 +75,7 @@ namespace DevLocker.Tools.AssetManagement
 		private GUIStyle HierarchyUsedByStyle;
 		private GUIStyle UrlStyle;
 		private GUIStyle ResultPropertyStyle;
+		private GUIStyle CopyButtonStyle;
 
 		private System.Diagnostics.Stopwatch m_SearchStopwatch = new System.Diagnostics.Stopwatch();
 		private bool SearchIsSlow => m_SearchStopwatch.ElapsedMilliseconds > 0.4f * 1000;
@@ -86,6 +87,15 @@ namespace DevLocker.Tools.AssetManagement
 			window.minSize = new Vector2(150f, 200f);
 
 			window.TrySelect(Selection.activeGameObject);
+		}
+
+		[MenuItem("CONTEXT/Component/Find Used By In Scene", false, 1000)]
+		public static void OpenWindowComponent(MenuCommand command)
+		{
+			var window = GetWindow<FindUsedByInScene>("Used By ...");
+			window.minSize = new Vector2(150f, 200f);
+
+			window.TrySelect(command.context);
 		}
 
 		void OnEnable()
@@ -382,6 +392,9 @@ namespace DevLocker.Tools.AssetManagement
 			ResultPropertyStyle = new GUIStyle(slimLabel);
 			ResultPropertyStyle.padding = new RectOffset(0, 0, 1, 0);
 			ResultPropertyStyle.margin = new RectOffset(0, 0, 1, 0);
+
+			CopyButtonStyle = new GUIStyle();
+			CopyButtonStyle.margin.top = 4;
 		}
 
 		private void OnGUI()
@@ -507,7 +520,7 @@ namespace DevLocker.Tools.AssetManagement
 				EditorGUIUtility.labelWidth = prevLabelWidth;
 				EditorGUI.indentLevel = prevIndent;
 
-				if (GUILayout.Button(CopyButtonContent, GUIStyle.none, GUILayout.Width(columnPropertyCopyWidth))) {
+				if (GUILayout.Button(CopyButtonContent, CopyButtonStyle, GUILayout.Width(columnPropertyCopyWidth))) {
 					const string arrayPattern = ".Array.data["; // Unity displays Array properties a bit ugly. No need to copy it.
 
 					EditorGUIUtility.systemCopyBuffer = result.PropertyName.Contains(arrayPattern)
