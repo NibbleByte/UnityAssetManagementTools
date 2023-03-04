@@ -71,7 +71,10 @@ namespace DevLocker.Tools.AssetManagement
 		private GUIContent TrackSelectionButtonContent;
 		private GUIContent LockToggleOnContent;
 		private GUIContent LockToggleOffContent;
+		private GUIContent CopyButtonContent;
 		private GUIStyle HierarchyUsedByStyle;
+		private GUIStyle UrlStyle;
+		private GUIStyle ResultPropertyStyle;
 
 		[MenuItem("GameObject/-= Find Used By In Scene =-", false, 0)]
 		public static void OpenWindow()
@@ -320,8 +323,25 @@ namespace DevLocker.Tools.AssetManagement
 			LockToggleOffContent = new GUIContent(EditorGUIUtility.IconContent("IN LockButton").image, "Don't track Unity selection (manually drag in object)");
 			LockToggleOnContent = new GUIContent(EditorGUIUtility.IconContent("IN LockButton on").image, LockToggleOffContent.tooltip);
 
+			CopyButtonContent = new GUIContent(EditorGUIUtility.FindTexture("Clipboard"), "Copy the Component + Property names");
+
 			HierarchyUsedByStyle = new GUIStyle();
 			HierarchyUsedByStyle.normal.background = Texture2D.whiteTexture;
+
+			GUIStyle slimLabel = new GUIStyle(GUI.skin.label);
+			slimLabel.padding = new RectOffset();
+			slimLabel.border = new RectOffset();
+			slimLabel.margin.left = 0;
+			slimLabel.margin.right = 0;
+
+			UrlStyle = new GUIStyle(GUI.skin.label);
+			UrlStyle.normal.textColor = EditorGUIUtility.isProSkin ? new Color(1.00f, 0.65f, 0.00f) : Color.blue;
+			UrlStyle.hover.textColor = UrlStyle.normal.textColor;
+			UrlStyle.active.textColor = Color.red;
+
+			ResultPropertyStyle = new GUIStyle(slimLabel);
+			ResultPropertyStyle.padding = new RectOffset(0, 0, 1, 0);
+			ResultPropertyStyle.margin = new RectOffset(0, 0, 1, 0);
 		}
 
 		private void OnGUI()
@@ -376,22 +396,96 @@ namespace DevLocker.Tools.AssetManagement
 				Selection.activeObject = selectedObj;
 			}
 
-			GUILayout.Label($"References to the selection ({m_References.Count}):", EditorStyles.boldLabel);
+			float totalWidth = position.width;
+
+			float columnNameWidth = Mathf.Min(totalWidth * 0.3f, 140f);
+			float columnComponentWidth = Mathf.Min(totalWidth * 0.25f, 120f);
+			float columnPropertyCopyWidth = 24f;
+
+			EditorGUILayout.BeginHorizontal();
+
+			GUILayout.Label(new GUIContent("GameObject", "Click on the GameObject name to ping it."), EditorStyles.boldLabel, GUILayout.Width(columnNameWidth));
+			GUILayout.Label(new GUIContent("Component", "Click on the component class name to open it in your IDE."), EditorStyles.boldLabel, GUILayout.Width(columnComponentWidth));
+			GUILayout.Label(new GUIContent("Property", "Property name is selectable"), EditorStyles.boldLabel);
+
+			EditorGUILayout.EndHorizontal();
 
 			m_ScrollView = GUILayout.BeginScrollView(m_ScrollView);
 
-			foreach (var result in m_References) {
+			GUIContent displayContent = new GUIContent();
+
+			for (int i = 0; i < m_References.Count; ++i) {
+				Result result = m_References[i];
+
+				if (result.TargetObj == null)
+					continue;
+
+				GameObject resultGO = (GameObject) EditorUtility.InstanceIDToObject(result.GameObjectInstanceID);
+
+				string resultTypeName = result.TargetObj.GetType().Name;
 
 				EditorGUILayout.BeginHorizontal();
 
-				var type = result.TargetObj ? result.TargetObj.GetType() : typeof(Object);
-				EditorGUILayout.ObjectField(result.TargetObj, type, true);
-				EditorGUILayout.TextField(result.PropertyName, GUILayout.Width(100f));
+
+				displayContent.text = $"\"{resultGO.name}\"";
+				displayContent.tooltip = resultGO.name;
+				if (GUILayout.Button(displayContent, UrlStyle, GUILayout.Width(columnNameWidth))) {
+					EditorGUIUtility.PingObject(resultGO);
+				}
+				EditorGUIUtility.AddCursorRect(GUILayoutUtility.GetLastRect(), MouseCursor.Link);
+
+
+				displayContent.text = resultTypeName;
+				displayContent.tooltip = resultTypeName + " "; // Tooltip doesn't display if text & tooltip are the same?
+				if (GUILayout.Button(displayContent, UrlStyle, GUILayout.Width(columnComponentWidth))) {
+
+					MonoScript asset = AssetDatabase.FindAssets($"t:script {resultTypeName}")
+						.Select(AssetDatabase.GUIDToAssetPath)
+						.Where(p => System.IO.Path.GetFileNameWithoutExtension(p) == resultTypeName)
+						.Select(AssetDatabase.LoadAssetAtPath<MonoScript>)
+						.FirstOrDefault();
+
+					if (asset) {
+						AssetDatabase.OpenAsset(asset);
+						GUIUtility.ExitGUI();
+					}
+				}
+				EditorGUIUtility.AddCursorRect(GUILayoutUtility.GetLastRect(), MouseCursor.Link);
+
+
+
+				int prevIndent = EditorGUI.indentLevel;
+				EditorGUI.indentLevel = 0;
+
+				float prevLabelWidth = EditorGUIUtility.labelWidth;
+				EditorGUIUtility.labelWidth = 0f;
+
+				// Get rect manually, because implementation has hard-coded two lines height.
+				var rect = EditorGUILayout.GetControlRect(false, EditorGUIUtility.singleLineHeight, ResultPropertyStyle, GUILayout.ExpandWidth(true));
+				EditorGUI.SelectableLabel(rect, result.PropertyName, ResultPropertyStyle);
+
+				EditorGUIUtility.labelWidth = prevLabelWidth;
+				EditorGUI.indentLevel = prevIndent;
+
+				if (GUILayout.Button(CopyButtonContent, GUIStyle.none, GUILayout.Width(columnPropertyCopyWidth))) {
+					const string arrayPattern = ".Array.data["; // Unity displays Array properties a bit ugly. No need to copy it.
+
+					EditorGUIUtility.systemCopyBuffer = result.PropertyName.Contains(arrayPattern)
+						? $"{resultTypeName}.{result.PropertyName.Substring(0, result.PropertyName.IndexOf(arrayPattern))}"
+						: $"{resultTypeName}.{result.PropertyName}"
+						;
+
+					ShowNotification(new GUIContent($"Copied to clipboard."), 0.3f);
+				}
 
 				EditorGUILayout.EndHorizontal();
 			}
 
 			GUILayout.EndScrollView();
+
+			GUILayout.FlexibleSpace();
+
+			GUILayout.Label($"Selection used by ({m_References.Count})", EditorStyles.boldLabel);
 		}
 	}
 }
