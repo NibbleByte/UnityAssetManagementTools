@@ -479,6 +479,9 @@ namespace DevLocker.Tools.AssetManagement
 
 				EditorGUILayout.BeginHorizontal();
 
+				Color prevColor = GUI.color;
+				GUI.color = new Color(1f, 1f, 1f, m_SelectedObject == resultGO ? 0.5f : 1f);
+
 
 				displayContent.text = $"\"{resultGO.name}\"";
 				displayContent.tooltip = resultGO.name;
@@ -531,6 +534,7 @@ namespace DevLocker.Tools.AssetManagement
 					ShowNotification(new GUIContent($"Copied to clipboard."), 0.3f);
 				}
 
+				GUI.color = prevColor;
 				EditorGUILayout.EndHorizontal();
 			}
 
