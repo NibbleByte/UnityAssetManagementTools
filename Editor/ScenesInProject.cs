@@ -950,18 +950,26 @@ namespace DevLocker.Tools.AssetManagement
 		//
 		private void LoadData()
 		{
-			if (File.Exists(PersonalPreferencesPath)) {
-				m_PersonalPrefs = JsonUtility.FromJson<PersonalPreferences>(File.ReadAllText(PersonalPreferencesPath));
-			} else if (File.Exists(Legacy_PersonalPreferencesPath)) {
-				m_PersonalPrefs = JsonUtility.FromJson<PersonalPreferences>(File.ReadAllText(Legacy_PersonalPreferencesPath));
-			} else {
-				m_PersonalPrefs = new PersonalPreferences();
-			}
+			try {
+				if (File.Exists(PersonalPreferencesPath)) {
+					m_PersonalPrefs = JsonUtility.FromJson<PersonalPreferences>(File.ReadAllText(PersonalPreferencesPath));
+				} else if (File.Exists(Legacy_PersonalPreferencesPath)) {
+					m_PersonalPrefs = JsonUtility.FromJson<PersonalPreferences>(File.ReadAllText(Legacy_PersonalPreferencesPath));
+				} else {
+					m_PersonalPrefs = new PersonalPreferences();
+				}
 
-			if (File.Exists(ProjectPreferencesPath)) {
-				m_ProjectPrefs = JsonUtility.FromJson<ProjectPreferences>(File.ReadAllText(ProjectPreferencesPath));
-			} else {
+				if (File.Exists(ProjectPreferencesPath)) {
+					m_ProjectPrefs = JsonUtility.FromJson<ProjectPreferences>(File.ReadAllText(ProjectPreferencesPath));
+				} else {
+					m_ProjectPrefs = new ProjectPreferences();
+				}
+			} catch(Exception ex) {
+				m_PersonalPrefs = new PersonalPreferences();
 				m_ProjectPrefs = new ProjectPreferences();
+
+				Debug.LogException(ex);
+				Debug.LogWarning($"Issues detected while loading preferences for {nameof(ScenesInProject)}. Resetting preferences.", this);
 			}
 
 			Func<string, List<SceneEntry>> ParseScenesFromFile = (filePath) => {
@@ -977,16 +985,25 @@ namespace DevLocker.Tools.AssetManagement
 				return list;
 			};
 
-			if (File.Exists(SettingsPathPinnedScenes)) {
-				m_Pinned = ParseScenesFromFile(SettingsPathPinnedScenes);
-			} else if (File.Exists(Legacy_SettingsPathPinnedScenes)) {
-				m_Pinned = ParseScenesFromFile(Legacy_SettingsPathPinnedScenes);
-			}
+			try {
+				if (File.Exists(SettingsPathPinnedScenes)) {
+					m_Pinned = ParseScenesFromFile(SettingsPathPinnedScenes);
+				} else if (File.Exists(Legacy_SettingsPathPinnedScenes)) {
+					m_Pinned = ParseScenesFromFile(Legacy_SettingsPathPinnedScenes);
+				}
 
-			if (File.Exists(SettingsPathScenes)) {
-				m_Scenes = ParseScenesFromFile(SettingsPathScenes);
-			} else if (File.Exists(Legacy_SettingsPathScenes)) {
-				m_Scenes = ParseScenesFromFile(Legacy_SettingsPathScenes);
+				if (File.Exists(SettingsPathScenes)) {
+					m_Scenes = ParseScenesFromFile(SettingsPathScenes);
+				} else if (File.Exists(Legacy_SettingsPathScenes)) {
+					m_Scenes = ParseScenesFromFile(Legacy_SettingsPathScenes);
+				}
+			}
+			catch(Exception ex) {
+				m_Pinned = new List<SceneEntry>();
+				m_Scenes = new List<SceneEntry>();
+
+				Debug.LogException(ex);
+				Debug.LogWarning($"Issues detected while loading cache for {nameof(ScenesInProject)}. Resetting cached & pinned scenes.", this);
 			}
 		}
 
