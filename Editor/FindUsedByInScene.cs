@@ -4,7 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
-
+using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using Object = UnityEngine.Object;
@@ -103,9 +103,19 @@ namespace DevLocker.Tools.AssetManagement
 			m_SelectionTracking = (SelectionTrackingType)EditorPrefs.GetInt("DevLocker.UsedBy.SelectionTracking", (int) SelectionTrackingType.SceneObjects);
 
 			Selection.selectionChanged += OnSelectionChange;
-			EditorApplication.hierarchyWindowItemOnGUI += OnHierarchyWindowItemOnGUI;
-
-			EditorApplication.RepaintHierarchyWindow();
+			
+			// It is just annoying and not useful. Disabling this feature for now.
+			//EditorApplication.hierarchyWindowItemOnGUI += OnHierarchyWindowItemOnGUI;
+			
+			//EditorApplication.RepaintHierarchyWindow();
+			
+			EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+			SceneManager.sceneLoaded += OnSceneLoaded;
+			SceneManager.sceneUnloaded += OnSceneUnloaded;
+			EditorSceneManager.sceneOpened += OnSceneOpened;
+			EditorSceneManager.sceneClosed += OnSceneClosed;
+			PrefabStage.prefabStageOpened += OnPrefabStageChanged;
+			PrefabStage.prefabStageClosing += OnPrefabStageChanged;
 		}
 
 		void OnDisable()
@@ -116,6 +126,14 @@ namespace DevLocker.Tools.AssetManagement
 			EditorApplication.hierarchyWindowItemOnGUI -= OnHierarchyWindowItemOnGUI;
 
 			EditorApplication.RepaintHierarchyWindow();
+			
+			EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
+			SceneManager.sceneLoaded -= OnSceneLoaded;
+			SceneManager.sceneUnloaded -= OnSceneUnloaded;
+			EditorSceneManager.sceneOpened -= OnSceneOpened;
+			EditorSceneManager.sceneClosed -= OnSceneClosed;
+			PrefabStage.prefabStageOpened -= OnPrefabStageChanged;
+			PrefabStage.prefabStageClosing -= OnPrefabStageChanged;
 		}
 
 		private void OnSelectionChange()
@@ -466,6 +484,17 @@ namespace DevLocker.Tools.AssetManagement
 			m_ScrollView = GUILayout.BeginScrollView(m_ScrollView);
 
 			GUIContent displayContent = new GUIContent();
+			
+			
+			GameObject selectedGO = m_SelectedObject as GameObject;
+			if (selectedGO == null && m_SelectedObject) {
+				if (m_SelectedObject is Component) {
+					selectedGO = ((Component) m_SelectedObject).gameObject;
+				} else {
+					// Can have selected asset instead.
+					//return;
+				}
+			}
 
 			for (int i = 0; i < m_References.Count; ++i) {
 				Result result = m_References[i];
@@ -480,7 +509,7 @@ namespace DevLocker.Tools.AssetManagement
 				EditorGUILayout.BeginHorizontal();
 
 				Color prevColor = GUI.color;
-				GUI.color = new Color(1f, 1f, 1f, m_SelectedObject == resultGO ? 0.5f : 1f);
+				GUI.color = new Color(1f, 1f, 1f, selectedGO == resultGO ? 0.5f : 1f);
 
 
 				displayContent.text = $"\"{resultGO.name}\"";
@@ -544,5 +573,45 @@ namespace DevLocker.Tools.AssetManagement
 
 			GUILayout.Label($"Selection used by ({m_References.Count})", EditorStyles.boldLabel);
 		}
+		
+		
+		#region Event handlers for refresh
+
+		private void OnPlayModeStateChanged(PlayModeStateChange state)
+		{
+			switch (state) {
+				case PlayModeStateChange.EnteredEditMode:
+				case PlayModeStateChange.EnteredPlayMode:
+					Repaint();
+					break;
+			}
+		}
+
+		private void OnSceneLoaded(Scene arg0, LoadSceneMode arg1)
+		{
+			Repaint();
+		}
+
+		private void OnSceneUnloaded(Scene arg0)
+		{
+			Repaint();
+		}
+
+		private void OnSceneOpened(Scene scene, OpenSceneMode mode)
+		{
+			Repaint();
+		}
+
+		private void OnSceneClosed(Scene scene)
+		{
+			Repaint();
+		}
+
+		private void OnPrefabStageChanged(PrefabStage obj)
+		{
+			Repaint();
+		}
+
+		#endregion
 	}
 }
