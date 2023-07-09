@@ -4,6 +4,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
+#if !UNITY_2019_4_OR_NEWER
+using UnityEditor.Experimental.SceneManagement;
+#endif
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -105,12 +108,12 @@ namespace DevLocker.Tools.AssetManagement
 			m_SelectionTracking = (SelectionTrackingType)EditorPrefs.GetInt("DevLocker.UsedBy.SelectionTracking", (int) SelectionTrackingType.SceneObjects);
 
 			Selection.selectionChanged += OnSelectionChange;
-			
+
 			// It is just annoying and not useful. Disabling this feature for now.
 			//EditorApplication.hierarchyWindowItemOnGUI += OnHierarchyWindowItemOnGUI;
-			
+
 			//EditorApplication.RepaintHierarchyWindow();
-			
+
 			EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
 			SceneManager.sceneLoaded += OnSceneLoaded;
 			SceneManager.sceneUnloaded += OnSceneUnloaded;
@@ -128,7 +131,7 @@ namespace DevLocker.Tools.AssetManagement
 			EditorApplication.hierarchyWindowItemOnGUI -= OnHierarchyWindowItemOnGUI;
 
 			EditorApplication.RepaintHierarchyWindow();
-			
+
 			EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
 			SceneManager.sceneLoaded -= OnSceneLoaded;
 			SceneManager.sceneUnloaded -= OnSceneUnloaded;
@@ -227,17 +230,10 @@ namespace DevLocker.Tools.AssetManagement
 				}
 			}
 
-#if UNITY_2019_4_OR_NEWER
-			UnityEditor.SceneManagement.PrefabStage prefabStage = selectedGO
-				? UnityEditor.SceneManagement.PrefabStageUtility.GetPrefabStage(selectedGO)
-				: UnityEditor.SceneManagement.PrefabStageUtility.GetCurrentPrefabStage()
+			PrefabStage prefabStage = selectedGO
+				? PrefabStageUtility.GetPrefabStage(selectedGO)
+				: PrefabStageUtility.GetCurrentPrefabStage()
 				;
-#else
-			UnityEditor.Experimental.SceneManagement.PrefabStage prefabStage = selectedGO
-				? UnityEditor.Experimental.SceneManagement.PrefabStageUtility.GetPrefabStage(selectedGO)
-				: UnityEditor.Experimental.SceneManagement.PrefabStageUtility.GetCurrentPrefabStage()
-				;
-#endif
 
 			m_SearchStopwatch.Restart();
 
@@ -358,14 +354,14 @@ namespace DevLocker.Tools.AssetManagement
 
 			// If selected target is prefab, check if any object is instance of that prefab.
 			if (PrefabUtility.IsPartOfPrefabAsset(m_SelectedObject)) {
-				
+
 				string prefabPath = AssetDatabase.GetAssetPath(m_SelectedObject);
 				List<GameObject> prefabInstanceReferences = new List<GameObject>();	// Use list to keep the order, not HashSet.
 
 				Transform[] childTransforms = go.GetComponentsInChildren<Transform>(true);
 				for (int i = 0; i < childTransforms.Length; ++i) {
 					Transform childTransform = childTransforms[i];
-					
+
 					if (SearchIsSlow) {
 						if (EditorUtility.DisplayCancelableProgressBar("Find Used By In Scene", $"Checking prefab links \"{childTransform.name}\"...", (float)i / childTransforms.Length)) {
 							throw new OperationCanceledException();
@@ -379,7 +375,7 @@ namespace DevLocker.Tools.AssetManagement
 						}
 					}
 				}
-				
+
 				m_References.AddRange(prefabInstanceReferences.Select(r => new Result(r, r.GetInstanceID(), "<Prefab Instance>")));
 			}
 
@@ -525,8 +521,8 @@ namespace DevLocker.Tools.AssetManagement
 			m_ScrollView = GUILayout.BeginScrollView(m_ScrollView);
 
 			GUIContent displayContent = new GUIContent();
-			
-			
+
+
 			GameObject selectedGO = m_SelectedObject as GameObject;
 			if (selectedGO == null && m_SelectedObject) {
 				if (m_SelectedObject is Component) {
@@ -560,11 +556,11 @@ namespace DevLocker.Tools.AssetManagement
 				}
 				EditorGUIUtility.AddCursorRect(GUILayoutUtility.GetLastRect(), MouseCursor.Link);
 
-				
+
 				if (result.TargetObj is GameObject) {
 					// Prefab instance references are not components.
 					GUILayout.Label("", GUILayout.Width(columnComponentWidth));
-					
+
 				} else {
 					displayContent.text = resultTypeName;
 					displayContent.tooltip = resultTypeName + " "; // Tooltip doesn't display if text & tooltip are the same?
@@ -608,7 +604,11 @@ namespace DevLocker.Tools.AssetManagement
 						: $"{resultTypeName}.{result.PropertyName}"
 						;
 
+#if UNITY_2019_4_OR_NEWER
 					ShowNotification(new GUIContent($"Copied to clipboard."), 0.3f);
+#else
+					ShowNotification(new GUIContent($"Copied to clipboard."));
+#endif
 				}
 
 				GUI.color = prevColor;
@@ -621,9 +621,9 @@ namespace DevLocker.Tools.AssetManagement
 
 			GUILayout.Label($"Selection used by ({m_References.Count})", EditorStyles.boldLabel);
 		}
-		
-		
-		#region Event handlers for refresh
+
+
+#region Event handlers for refresh
 
 		private void OnPlayModeStateChanged(PlayModeStateChange state)
 		{
@@ -660,6 +660,6 @@ namespace DevLocker.Tools.AssetManagement
 			Repaint();
 		}
 
-		#endregion
+#endregion
 	}
 }

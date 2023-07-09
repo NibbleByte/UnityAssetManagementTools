@@ -2,12 +2,15 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Formatters.Binary;
 using System.Text;
+using System.Threading.Tasks;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using Action = System.Action;
 using Object = UnityEngine.Object;
 
 namespace DevLocker.Tools.AssetManagement
@@ -113,7 +116,7 @@ namespace DevLocker.Tools.AssetManagement
 		[NonSerialized]
 		private GUIStyle BOLDED_FOLDOUT_STYLE;
 		private GUIContent RESULTS_SEARCHED_FILTER_LABEL = new GUIContent("Searched Filter", "Filter out results by hiding some search entries.");
-		private GUIContent RESULTS_FOUNDED_FILTER_LABEL = new GUIContent("Founded Filter", "Filter out results by hiding some found entries (under each search entry).");
+		private GUIContent RESULTS_FOUND_FILTER_LABEL = new GUIContent("Found Filter", "Filter out results by hiding some found entries (under each search entry).");
 		private GUIContent REPLACE_PREFABS_ENTRY_BTN = new GUIContent("Replace in scenes", "Replace this searched prefab entry with the specified replacement (on the left) in whichever scene it was found.");
 		private GUIContent REPLACE_PREFABS_ALL_BTN = new GUIContent("Replace all prefabs", "Replace ALL searched prefab entries with the specified replacement (if provided) in whichever scene they were found.");
 
@@ -175,7 +178,7 @@ namespace DevLocker.Tools.AssetManagement
 
 				EditorGUILayout.Space();
 				EditorGUILayout.BeginHorizontal();
-				_searchMetas = (SearchMetas) EditorGUILayout.EnumPopup("Metas", _searchMetas);
+				_searchMetas = (SearchMetas)EditorGUILayout.EnumPopup("Metas", _searchMetas);
 				EditorGUILayout.EndHorizontal();
 				EditorGUILayout.Space();
 
@@ -193,20 +196,20 @@ namespace DevLocker.Tools.AssetManagement
 				if (_searchText) {
 					if (string.IsNullOrWhiteSpace(_textToSearch)) {
 						EditorUtility.DisplayDialog("Invalid Input", "Please enter some valid text to search for.", "Ok");
-						return;
+						GUIUtility.ExitGUI();
 					}
 
 					PerformTextSearch(_textToSearch);
-					return;
+					GUIUtility.ExitGUI();
 
 				} else {
 					if (Selection.objects.Length == 0) {
 						EditorUtility.DisplayDialog("Invalid Input", "Please select some assets to search for.", "Ok");
-						return;
+						GUIUtility.ExitGUI();
 					}
 
 					PerformSearch(Selection.objects);
-					return; // HACK: causes Null exception in editor layout system for some reason.
+					GUIUtility.ExitGUI(); // HACK: causes Null exception in editor layout system for some reason.
 				}
 
 			}
@@ -230,7 +233,7 @@ namespace DevLocker.Tools.AssetManagement
 		private void PerformSearch(Object[] targets)
 		{
 			// Collect all objects guids.
-			var targetGuids = new List<SearchEntryData>(targets.Length);
+			var targetEntries = new List<SearchEntryData>(targets.Length);
 			for (int i = 0; i < targets.Length; ++i) {
 				var target = targets[i];
 				var targetPath = AssetDatabase.GetAssetPath(target);
@@ -272,7 +275,7 @@ namespace DevLocker.Tools.AssetManagement
 							continue;
 						}
 
-						targetGuids.Add(new SearchEntryData(foundTarget));
+						targetEntries.Add(new SearchEntryData(foundTarget));
 					}
 					continue;
 				}
@@ -283,11 +286,11 @@ namespace DevLocker.Tools.AssetManagement
 					Debug.LogWarning($"Asset {target.name} is a normal asset instance nested in another one and is not supported for Unity versions before 2018.2.x for search.", target);
 					continue;
 				}
-				targetGuids.Add(new SearchEntryData(target));
+				targetEntries.Add(new SearchEntryData(target));
 			}
 
 
-			if (targetGuids.Count == 0)
+			if (targetEntries.Count == 0)
 				return;
 
 
@@ -296,78 +299,70 @@ namespace DevLocker.Tools.AssetManagement
 			_results.Reset();
 
 			// This used to be on demand, but having empty search results is more helpful, then having them missing.
-			foreach (var target in targetGuids) {
+			foreach (var target in targetEntries) {
 				_results.Add(target.Target, new SearchResultData() { Root = target.Target });
 			}
 
-			var foundGuidsCache = new HashSet<Object>();
+			var appDataPath = Application.dataPath;
+			var allMatches = new Dictionary<SearchEntryData, List<string>>();
+			var tasks = new List<Task<Dictionary<SearchEntryData, List<string>>>>();
+			int threadsCount = Environment.ProcessorCount;
+			var batchSize = searchPaths.Length <= threadsCount ? 1 : Mathf.CeilToInt((float)searchPaths.Length / threadsCount);
+			var progressHandles = new List<ProgressHandle>();
 
-			for (int searchIndex = 0; searchIndex < searchPaths.Length; ++searchIndex) {
-				var searchPath = searchPaths[searchIndex];
-				var searchFullPath = Application.dataPath + searchPath.Remove(0, "Assets".Length);
+			foreach (var pathsBatch in Split(searchPaths, batchSize)) {
+				var progressHandle = new ProgressHandle(pathsBatch.Length);
 
-				// Probably a folder. Skip it.
-				if (string.IsNullOrEmpty(Path.GetExtension(searchPath))) {
-					continue;
-				}
+				var task = new Task<Dictionary<SearchEntryData, List<string>>>(() => IndexingJob(
+					pathsBatch, _searchMetas, _searchMainAssetOnly, appDataPath, targetEntries, progressHandle));
 
-				bool cancel = EditorUtility.DisplayCancelableProgressBar("Searching...", $"{Path.GetFileName(searchPath)}", (float)searchIndex / searchPaths.Length);
-				if (cancel) {
-					EditorUtility.ClearProgressBar();
-					return;
-				}
+				tasks.Add(task);
+				progressHandles.Add(progressHandle);
+				// t.RunSynchronously();
+				task.Start();
+			}
 
-				foundGuidsCache.Clear();
+			while (tasks.Any(a => a.Status == TaskStatus.Running)) {
+				ShowTasksProgress(progressHandles, searchPaths.Length, tasks.Count);
+			}
 
+			foreach (var task in tasks) {
+				ShowTasksProgress(progressHandles, searchPaths.Length, tasks.Count);
 
-				// Read each line for every target object. Early break when it has a chance.
-				var lines = File.ReadLines(searchFullPath);
-				if (_searchMetas != SearchMetas.DontSearchMetas) {
-					// Read metas as well (embedded materials references for FBX are stored in the meta).
-					lines = _searchMetas == SearchMetas.SearchWithMetas ? lines.Concat(File.ReadLines(searchFullPath + ".meta")) : File.ReadLines(searchFullPath + ".meta");
-				}
+				foreach (var pair in task.Result) {
+					SearchEntryData searchEntry = pair.Key;
+					List<string> paths;
 
-				foreach (var line in lines) {
-
-					foreach (var searchData in targetGuids) {
-
-						if (foundGuidsCache.Contains(searchData.Target))
-							continue;
-
-						var matchFound = LineMatchesSearch(searchData, line, searchPath, _searchMainAssetOnly);
-
-						if (matchFound) {
-
-							var foundObj = AssetDatabase.LoadAssetAtPath<Object>(searchPath);
-
-							// If object is invalid for some reason - skip. (script of scriptable object was deleted or something)
-							if (foundObj == null) {
-								continue;
-							}
-
-							if (foundObj != searchData.Target) {
-
-								SearchResultData data = _results[searchData.Target];
-								//SearchResultData data;
-								//if (!_results.TryGetValue(searchData.Target, out data)) {
-								//	data = new SearchResultData() { Root = searchData.Target };
-								//	_results.Add(searchData.Target, data);
-								//}
-
-								if (!data.Found.Contains(foundObj)) {
-									data.Found.Add(foundObj);
-									_results.AddType(foundObj.GetType());
-								}
-							}
-
-							foundGuidsCache.Add(searchData.Target);
-						}
-
+					if (!allMatches.TryGetValue(searchEntry, out paths)) {
+						paths = new List<string>();
+						allMatches[searchEntry] = paths;
 					}
 
-					// No more need to check this file anymore.
-					if (foundGuidsCache.Count == targetGuids.Count)
-						break;
+					paths.AddRange(pair.Value);
+				}
+			}
+
+			EditorUtility.DisplayProgressBar("Search References FAST", "Reducing results...", 1);
+
+			// Reduce matches
+			foreach (var pair in allMatches) {
+				SearchEntryData searchEntry = pair.Key;
+
+				foreach (string matchGuid in pair.Value) {
+					var foundObj = AssetDatabase.LoadAssetAtPath<Object>(matchGuid);
+
+					// If object is invalid for some reason - skip. (script of scriptable object was deleted or something)
+					if (foundObj == null) {
+						continue;
+					}
+
+					if (foundObj != searchEntry.Target) {
+						SearchResultData data = _results[searchEntry.Target];
+						if (!data.Found.Contains(foundObj)) {
+							data.Found.Add(foundObj);
+							_results.AddType(foundObj.GetType());
+						}
+					}
 				}
 			}
 
@@ -378,39 +373,171 @@ namespace DevLocker.Tools.AssetManagement
 			EditorUtility.ClearProgressBar();
 		}
 
-		private static bool LineMatchesSearch(SearchEntryData searchData, string line, string searchPath, bool matchGuidOnly)
+		private static Dictionary<SearchEntryData, List<string>> IndexingJob(string[] searchPaths, SearchMetas searchMetas,
+			bool searchMainAssetOnly, string appDataPath, List<SearchEntryData> targetEntries, ProgressHandle progress)
 		{
-			var matchFound = line.Contains(searchData.Guid) && (matchGuidOnly || string.IsNullOrEmpty(searchData.LocalId) || line.Contains(searchData.LocalId));
+			var matches = new Dictionary<SearchEntryData, List<string>>();
+			var buffers = new FileBuffers();
 
-			// Embedded asset searching for references in the same main asset file.
-			if (searchData.IsSubAsset && searchData.MainAssetPath == searchPath) {
-				matchFound = line.Contains(string.Format("{{fileID: {0}}}", searchData.LocalId));   // If reference in the same file, guid is not used.
+			for (int searchIndex = 0; searchIndex < searchPaths.Length; ++searchIndex) {
+				var searchPath = searchPaths[searchIndex];
+				var searchFullPath = $"{appDataPath}{searchPath.Remove(0, "Assets".Length)}";
+
+				progress.ItemsDone = searchIndex;
+				progress.LastProcessedPath = Path.GetFileName(searchPath);
+
+				// Probably a folder. Skip it.
+				if (string.IsNullOrEmpty(Path.GetExtension(searchPath))) {
+					continue;
+				}
+
+				if (progress.CancelRequested) {
+					break;
+				}
+
+				buffers.Clear();
+
+				if (searchMetas == SearchMetas.MetasOnly) {
+					buffers.AppendFile(searchFullPath + ".meta");
+				} else {
+					buffers.AppendFile(searchFullPath);
+
+					if (searchMetas == SearchMetas.SearchWithMetas) {
+						// Append a line break to reduce possibility of finding strings that start in
+						// a file and continues in the .meta
+						buffers.StringBuilder.Append("\n");
+						buffers.AppendFile(searchFullPath + ".meta");
+					}
+				}
+
+				string contents = buffers.StringBuilder.ToString();
+
+				foreach (SearchEntryData searchData in targetEntries) {
+					bool matchFound = ContentMatchesSearch(searchData, contents, searchPath, searchMainAssetOnly);
+
+					if (matchFound) {
+						List<string> matchedPaths;
+
+						if (!matches.TryGetValue(searchData, out matchedPaths)) {
+							matchedPaths = new List<string>();
+							matches[searchData] = matchedPaths;
+						}
+
+						matchedPaths.Add(searchPath);
+					}
+				}
 			}
 
-			return matchFound;
+			progress.ItemsDone = progress.ItemsTotal;
+
+			return matches;
+		}
+
+		private static void ShowTasksProgress(List<ProgressHandle> progressHandles, int searchPathsCount, int tasksCount)
+		{
+			float progress = progressHandles.Average(ph => ph.Progress01);
+			string progressDisplay = string.Join(" | ", progressHandles.Where(ph => !ph.Finished).Select(ph => $"{ph.LastProcessedPath}"));
+			//string progressDisplay = string.Join(" ", progressHandles.Where(ph => !ph.Finished).Select(ph => $"[{ph.ProgressPercentage:0}%]"));
+			bool cancel = EditorUtility.DisplayCancelableProgressBar($"Searching through {searchPathsCount} assets using {tasksCount} threads...", progressDisplay, progress);
+			if (cancel) {
+				foreach (ProgressHandle progressHandle in progressHandles) {
+					progressHandle.CancelRequested = true;
+				}
+			}
+		}
+
+		private static List<string> TextIndexingJob(string[] searchPaths, SearchMetas searchMetas, string appDataPath,
+			string targetWord, ProgressHandle progress)
+		{
+			var matches = new List<string>();
+			var buffers = new FileBuffers();
+
+			for (int searchIndex = 0; searchIndex < searchPaths.Length; ++searchIndex) {
+				var searchPath = searchPaths[searchIndex];
+				var searchFullPath = $"{appDataPath}{searchPath.Remove(0, "Assets".Length)}";
+
+				progress.ItemsDone = searchIndex;
+				progress.LastProcessedPath = Path.GetFileName(searchPath);
+
+				if (progress.CancelRequested) {
+					break;
+				}
+
+				// Probably a folder. Skip it.
+				if (string.IsNullOrEmpty(Path.GetExtension(searchPath))) {
+					continue;
+				}
+
+				buffers.Clear();
+
+				if (searchMetas == SearchMetas.MetasOnly) {
+					buffers.AppendFile(searchFullPath + ".meta");
+				} else {
+					buffers.AppendFile(searchFullPath);
+
+					if (searchMetas == SearchMetas.SearchWithMetas) {
+						// Append a line break to reduce possibility of finding strings that start in
+						// a file and continues in the .meta
+						buffers.StringBuilder.Append("\n");
+						buffers.AppendFile(searchFullPath + ".meta");
+					}
+				}
+
+				if (buffers.StringBuilder.ToString().Contains(targetWord)) {
+					matches.Add(searchPath);
+				}
+			}
+
+			progress.ItemsDone = progress.ItemsTotal;
+
+			return matches;
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		private static bool ContentMatchesSearch(SearchEntryData searchData, string content, string searchPath, bool matchGuidOnly)
+		{
+			// Embedded asset searching for references in the same main asset file.
+			if (searchData.IsSubAsset && searchData.MainAssetPath == searchPath) {
+				return content.Contains($"{{fileID: {searchData.LocalId}}}");   // If reference in the same file, guid is not used.
+
+			} else {
+				int guidIndex = content.IndexOf(searchData.Guid);
+				if (guidIndex < 0)
+					return false;
+
+				if (matchGuidOnly || string.IsNullOrEmpty(searchData.LocalId))
+					return true;
+
+				int startOfLineIndex = content.LastIndexOf('\n', guidIndex);
+				if (startOfLineIndex < 0) startOfLineIndex = 0;
+
+				// Local id is to the left of the guid. Example:
+				// - target: {fileID: 6986883487782155098, guid: af7e5b759d61c1b4fbf64e33d8f248dc, type: 3}
+				int localIdIndex = content.IndexOf(searchData.LocalId, startOfLineIndex);
+				if (localIdIndex < 0)
+					return false;
+
+				int endOfLineIndex = content.IndexOf('\n', guidIndex);
+				if (endOfLineIndex < 0) endOfLineIndex = content.Length;
+
+				return startOfLineIndex <= localIdIndex && localIdIndex < endOfLineIndex;
+			}
 		}
 
 		public static bool PerformSingleSearch(Object asset, string searchPath)
 		{
 			var searchData = new SearchEntryData(asset);
 
-			var lines = File.ReadLines(searchPath);
-			foreach (var line in lines) {
-				if (LineMatchesSearch(searchData, line, searchPath, false))
-					return true;
-			}
-
-			return false;
+			return ContentMatchesSearch(searchData, File.ReadAllText(searchPath), searchPath, false);
 		}
 
 		public static bool PerformSingleSearch(IEnumerable<Object> assets, string searchPath)
 		{
 			var searchDatas = assets.Select(a => new SearchEntryData(a)).ToList();
-			var lines = File.ReadLines(searchPath);
-
-			foreach (var line in lines) {
-				if (searchDatas.Any(sd => LineMatchesSearch(sd, line, searchPath, false)))
+			foreach (SearchEntryData searchData in searchDatas) {
+				if (ContentMatchesSearch(searchData, File.ReadAllText(searchPath), searchPath, false)) {
 					return true;
+				}
 			}
 
 			return false;
@@ -423,46 +550,48 @@ namespace DevLocker.Tools.AssetManagement
 			_results.Reset();
 
 			var data = new SearchResultData() { Root = this };
+			var appDataPath = Application.dataPath;
 
-			for (int searchIndex = 0; searchIndex < searchPaths.Length; ++searchIndex) {
-				var searchPath = searchPaths[searchIndex];
-				var searchFullPath = Application.dataPath + searchPath.Remove(0, "Assets".Length);
+			var allMatches = new List<string>();
 
-				// Probably a folder. Skip it.
-				if (string.IsNullOrEmpty(Path.GetExtension(searchPath))) {
+			var tasks = new List<Task<List<string>>>();
+			int threadsCount = Environment.ProcessorCount;
+			var batchSize = searchPaths.Length <= threadsCount ? 1 : Mathf.CeilToInt((float)searchPaths.Length / threadsCount);
+			var progressHandles = new List<ProgressHandle>();
+
+			foreach (var pathsBatch in Split(searchPaths, batchSize)) {
+				var progressHandle = new ProgressHandle(pathsBatch.Length);
+
+				var task = Task.Run(() => TextIndexingJob(
+					pathsBatch, _searchMetas, appDataPath, text, progressHandle));
+
+				tasks.Add(task);
+				progressHandles.Add(progressHandle);
+			}
+
+			while (tasks.Any(a => a.Status == TaskStatus.Running)) {
+				ShowTasksProgress(progressHandles, searchPaths.Length, tasks.Count);
+			}
+
+			foreach (var task in tasks) {
+				ShowTasksProgress(progressHandles, searchPaths.Length, tasks.Count);
+				allMatches.AddRange(task.Result);
+			}
+
+			EditorUtility.DisplayProgressBar("Search References FAST", "Reducing results...", 1);
+
+			foreach (var searchPath in allMatches) {
+
+				var target = AssetDatabase.LoadAssetAtPath<Object>(searchPath);
+
+				// If object is invalid for some reason - skip. (script of scriptable object was deleted or something)
+				if (target == null) {
 					continue;
 				}
 
-				bool cancel = EditorUtility.DisplayCancelableProgressBar("Searching...", $"{Path.GetFileName(searchPath)}", (float)searchIndex / searchPaths.Length);
-				if (cancel) {
-					EditorUtility.ClearProgressBar();
-					return;
-				}
+				data.Found.Add(target);
+				_results.AddType(target.GetType());
 
-				// Read each line for every target object. Early break when it has a chance.
-				var lines = File.ReadLines(searchFullPath);
-				if (_searchMetas != SearchMetas.DontSearchMetas) {
-					// Read metas as well (embedded materials references for FBX are stored in the meta).
-					lines = _searchMetas == SearchMetas.SearchWithMetas ? lines.Concat(File.ReadLines(searchFullPath + ".meta")) : File.ReadLines(searchFullPath + ".meta");
-				}
-
-				foreach (var line in lines) {
-
-					if (line.Contains(text)) {
-
-						var target = AssetDatabase.LoadAssetAtPath<Object>(searchPath);
-
-						// If object is invalid for some reason - skip. (script of scriptable object was deleted or something)
-						if (target == null) {
-							continue;
-						}
-
-						data.Found.Add(target);
-						_results.AddType(target.GetType());
-
-						break;
-					}
-				}
 			}
 
 			if (data.Found.Count > 0) {
@@ -470,6 +599,41 @@ namespace DevLocker.Tools.AssetManagement
 			}
 
 			EditorUtility.ClearProgressBar();
+		}
+
+		/// <summary>
+		/// Split input collection into chunks of a given size
+		/// </summary>
+		private static List<T[]> Split<T>(T[] targets, int chunkSize)
+		{
+			var output = new List<T[]>();
+
+			var chunksCount = Mathf.FloorToInt((float)targets.Length / chunkSize);
+
+			for (int i = 0; i < chunksCount; i++) {
+				// full chunk
+				var chunk = new T[chunkSize];
+				for (int chunkIndex = 0; chunkIndex < chunk.Length; chunkIndex++) {
+					chunk[chunkIndex] = targets[i * chunkSize + chunkIndex];
+				}
+
+				output.Add(chunk);
+			}
+
+			{
+				// remaining chunk
+				var remain = targets.Length % chunkSize;
+				if (remain != 0) {
+					var chunk = new T[remain];
+
+					for (int j = 0; j < chunk.Length; j++) {
+						chunk[j] = targets[chunksCount * chunkSize + j];
+					}
+
+					output.Add(chunk);
+				}
+			}
+			return output;
 		}
 
 		private void DrawResults()
@@ -496,7 +660,7 @@ namespace DevLocker.Tools.AssetManagement
 
 
 			_resultsSearchEntryFilter = EditorGUILayout.TextField(RESULTS_SEARCHED_FILTER_LABEL, _resultsSearchEntryFilter);
-			_resultsFoundEntryFilter = EditorGUILayout.TextField(RESULTS_FOUNDED_FILTER_LABEL, _resultsFoundEntryFilter);
+			_resultsFoundEntryFilter = EditorGUILayout.TextField(RESULTS_FOUND_FILTER_LABEL, _resultsFoundEntryFilter);
 
 			EditorGUILayout.BeginHorizontal();
 			{
@@ -520,7 +684,7 @@ namespace DevLocker.Tools.AssetManagement
 			EditorGUILayout.BeginVertical();
 			_scrollPos = EditorGUILayout.BeginScrollView(_scrollPos, false, false);
 
-			for(int resultIndex = 0; resultIndex < _results.Data.Count; ++resultIndex) {
+			for (int resultIndex = 0; resultIndex < _results.Data.Count; ++resultIndex) {
 				var data = _results.Data[resultIndex].Value;
 
 				if (!string.IsNullOrEmpty(_resultsSearchEntryFilter)
@@ -578,8 +742,8 @@ namespace DevLocker.Tools.AssetManagement
 		private void DrawReplaceSinglePrefabs(SearchResultData data)
 		{
 			bool showReplaceButton = data.ShowDetails
-			                         && data.Root is GameObject
-			                         && data.Found.Any(obj => obj is SceneAsset);
+									 && data.Root is GameObject
+									 && data.Found.Any(obj => obj is SceneAsset);
 
 
 			if (showReplaceButton) {
@@ -597,18 +761,17 @@ namespace DevLocker.Tools.AssetManagement
 						if (!EditorUtility.DisplayDialog(
 							"Delete Prefab Instances",
 							"Delete all instances of the prefab in the scenes in the list?",
-							"Yes", "No"))
-						{
-							return;
+							"Yes", "No")) {
+							GUIUtility.ExitGUI(); ;
 						}
 					}
 
 					if (data.Root == null)
-						return;
+						GUIUtility.ExitGUI();
 
 					if (data.ReplacePrefab == data.Root) {
 						if (!EditorUtility.DisplayDialog("Wut?!", "This is the same prefab! Are you sure?", "Do it!", "Abort"))
-							return;
+							GUIUtility.ExitGUI();
 					}
 
 					bool reparentChildren = false;
@@ -620,8 +783,9 @@ namespace DevLocker.Tools.AssetManagement
 							"Destroy",
 							"Cancel");
 
-						if (option == 2)
-							return;
+						if (option == 2) {
+							GUIUtility.ExitGUI();
+						}
 
 						reparentChildren = option == 0;
 					}
@@ -656,14 +820,15 @@ namespace DevLocker.Tools.AssetManagement
 					"Destroy",
 					"Cancel");
 
-				if (option == 2)
-					return;
+				if (option == 2) {
+					GUIUtility.ExitGUI();
+				}
 
 				if (!EditorUtility.DisplayDialog("Are you sure?",
-					"This will replace all searched prefabs with the ones specified for replacing, in whichever scenes they were found. If nothing is specified, no replacing will occur.\n\nAre you sure?",
-					"Do it!",
-					"Cancel")) {
-					return;
+						"This will replace all searched prefabs with the ones specified for replacing, in whichever scenes they were found. If nothing is specified, no replacing will occur.\n\nAre you sure?",
+						"Do it!",
+						"Cancel")) {
+					GUIUtility.ExitGUI();
 				}
 
 
@@ -717,7 +882,7 @@ namespace DevLocker.Tools.AssetManagement
 							using (FileStream fileStream = File.Open(GetSaveSlothPath(i), FileMode.Open)) {
 
 								try {
-									_results = (SearchResult) serializer.Deserialize(fileStream);
+									_results = (SearchResult)serializer.Deserialize(fileStream);
 								}
 								catch (Exception ex) {
 									Debug.LogException(ex);
@@ -813,7 +978,7 @@ namespace DevLocker.Tools.AssetManagement
 							if (data.ReplacePrefab != null) {
 								replaceReport.AppendLine($"Scene: {sceneAsset.name}; Replaced: {GetGameObjectPath(go)};");
 
-								var replaceInstance = (GameObject) PrefabUtility.InstantiatePrefab(data.ReplacePrefab);
+								var replaceInstance = (GameObject)PrefabUtility.InstantiatePrefab(data.ReplacePrefab);
 								replaceInstance.transform.SetParent(transform.parent);
 								replaceInstance.transform.localPosition = transform.localPosition;
 								replaceInstance.transform.localRotation = transform.localRotation;
@@ -988,10 +1153,8 @@ namespace DevLocker.Tools.AssetManagement
 
 			}
 
-			public SearchResultData this[Object key]
-			{
-				get
-				{
+			public SearchResultData this[Object key] {
+				get {
 					SearchResultData data;
 					if (!TryGetValue(key, out data)) {
 						throw new InvalidDataException("Key is missing!");
@@ -1010,7 +1173,7 @@ namespace DevLocker.Tools.AssetManagement
 					throw new ArgumentException($"Key {key.name} already exists!");
 				}
 
-				Data.Add(new KeyValueResultPair() { Key = key, Value = data});
+				Data.Add(new KeyValueResultPair() { Key = key, Value = data });
 			}
 
 			public void AddType(Type type)
@@ -1033,7 +1196,7 @@ namespace DevLocker.Tools.AssetManagement
 			private KeyValueResultPair(SerializationInfo info, StreamingContext context)
 			{
 				Key = AssetDatabase.LoadAssetAtPath<Object>(AssetDatabase.GUIDToAssetPath(info.GetString("Key")));
-				Value = (SearchResultData) info.GetValue("Value", typeof(SearchResultData));
+				Value = (SearchResultData)info.GetValue("Value", typeof(SearchResultData));
 			}
 
 
@@ -1063,7 +1226,7 @@ namespace DevLocker.Tools.AssetManagement
 			private SearchResultData(SerializationInfo info, StreamingContext context)
 			{
 				Root = AssetDatabase.LoadAssetAtPath<Object>(AssetDatabase.GUIDToAssetPath(info.GetString("Root")));
-				var foundGuids = (string[]) info.GetValue("Found", typeof(string[]));
+				var foundGuids = (string[])info.GetValue("Found", typeof(string[]));
 				Found = foundGuids
 					.Select(AssetDatabase.GUIDToAssetPath)
 					.Select(AssetDatabase.LoadAssetAtPath<Object>)
@@ -1083,6 +1246,67 @@ namespace DevLocker.Tools.AssetManagement
 				info.AddValue("ReplacePrefab", AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(ReplacePrefab)));
 			}
 			#endregion
+		}
+
+		private class ProgressHandle
+		{
+			public int ItemsDone = 0;
+			public readonly int ItemsTotal = 0;
+			public string LastProcessedPath;
+
+			public bool CancelRequested = false;
+
+			public bool Finished => ItemsDone == ItemsTotal;
+
+			public ProgressHandle(int length)
+			{
+				ItemsTotal = length;
+			}
+
+			public float Progress01 {
+				get {
+					if (ItemsTotal == 0)
+						return 1f;
+
+					return (float)ItemsDone / ItemsTotal;
+				}
+			}
+
+			public int ProgressPercentage {
+				get {
+					if (ItemsTotal == 0)
+						return 100;
+
+					return Mathf.RoundToInt(((float)ItemsDone / ItemsTotal) * 100f);
+				}
+			}
+		}
+
+		private class FileBuffers
+		{
+			public readonly StringBuilder StringBuilder = new StringBuilder(4 * 1024);
+			public readonly char[] Buffer = new char[4 * 1024];
+
+			public void Clear()
+			{
+				StringBuilder.Clear();
+			}
+
+			public void AppendFile(string path)
+			{
+				using (StreamReader streamReader = new StreamReader(path, Encoding.UTF8, true, Buffer.Length)) {
+
+					while (true) {
+						int charsRead = streamReader.ReadBlock(Buffer, 0, Buffer.Length);
+
+						if (charsRead == 0) {
+							break;
+						}
+
+						StringBuilder.Append(Buffer, 0, charsRead);
+					}
+				}
+			}
 		}
 	}
 }
