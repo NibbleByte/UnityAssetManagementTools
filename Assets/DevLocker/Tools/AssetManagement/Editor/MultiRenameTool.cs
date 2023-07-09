@@ -954,6 +954,25 @@ namespace DevLocker.Tools.AssetManagement
 					}
 				}
 
+				// This also needs to be updated, not clear what it is for though.
+				// Check TextureImporterDataProvider.cs, TextureImporterDataProvider.Apply()
+				// (or just search for "m_SpriteSheet.m_NameFileIdTable" in the file)
+				var nameFileIdTableProperty = so.FindProperty("m_SpriteSheet.m_NameFileIdTable");
+				if (nameFileIdTableProperty != null) {
+
+					for(int tableIndex = 0; tableIndex < nameFileIdTableProperty.arraySize; ++tableIndex) {
+						var element = nameFileIdTableProperty.GetArrayElementAtIndex(tableIndex);
+
+						// Note that this is a special key-value-pair array.
+						var keyProperty = element.FindPropertyRelative("first");
+
+						var foundIndex = spriteNames.Key.IndexOf(keyProperty.stringValue);
+						if (foundIndex != -1) {
+							keyProperty.stringValue = spriteNames.Value[foundIndex];
+						}
+					}
+				}
+
 				so.ApplyModifiedPropertiesWithoutUndo();
 
 				// If file got renamed right before this, path will be incorrect.
