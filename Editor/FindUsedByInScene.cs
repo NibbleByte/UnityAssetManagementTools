@@ -87,6 +87,7 @@ namespace DevLocker.Tools.AssetManagement
 			window.minSize = new Vector2(150f, 200f);
 
 			window.TrySelect(Selection.activeGameObject);
+			window.m_LockSelection = true;
 		}
 
 		[MenuItem("CONTEXT/Component/Find Used By In Scene", false, 1000)]
@@ -96,6 +97,7 @@ namespace DevLocker.Tools.AssetManagement
 			window.minSize = new Vector2(150f, 200f);
 
 			window.TrySelect(command.context);
+			window.m_LockSelection = true;
 		}
 
 		void OnEnable()
@@ -321,13 +323,19 @@ namespace DevLocker.Tools.AssetManagement
 						if (sp.objectReferenceValue == null)
 							continue;
 
+						string propName = sp.propertyPath
+								.Replace(".m_PersistentCalls.m_Calls.Array.data[", "[")
+								.Replace(".Array.data[", "[")
+								.Replace("].m_Target", "]")
+							;
+
 						if (sp.objectReferenceValue == m_SelectedObject) {
 							int instanceId = component.gameObject.GetInstanceID();
-							m_References.Add(new Result(component, instanceId, sp.propertyPath));
+							m_References.Add(new Result(component, instanceId, propName));
 
 							hierarchyResults.TryGetValue(instanceId, out hierarchyResult);
 							hierarchyResult.GameObjectInstanceID = instanceId;
-							hierarchyResult.Summary += $"{component.GetType().Name}.{sp.propertyPath}\n";
+							hierarchyResult.Summary += $"{component.GetType().Name}.{propName}\n";
 							hierarchyResults[instanceId] = hierarchyResult;
 							break;
 						}
@@ -335,17 +343,44 @@ namespace DevLocker.Tools.AssetManagement
 						if (m_SelectedObject is GameObject && sp.objectReferenceValue is Component targetComponent) {
 							if (targetComponent && targetComponent.gameObject == m_SelectedObject) {
 								int instanceId = component.gameObject.GetInstanceID();
-								m_References.Add(new Result(component, instanceId, sp.propertyPath));
+								m_References.Add(new Result(component, instanceId, propName));
 
 								hierarchyResults.TryGetValue(instanceId, out hierarchyResult);
 								hierarchyResult.GameObjectInstanceID = instanceId;
-								hierarchyResult.Summary += $"{component.GetType().Name}.{sp.propertyPath}\n";
+								hierarchyResult.Summary += $"{component.GetType().Name}.{propName}\n";
 								hierarchyResults[instanceId] = hierarchyResult;
 								break;
 							}
 						}
 					}
 				}
+			}
+
+			// If selected target is prefab, check if any object is instance of that prefab.
+			if (PrefabUtility.IsPartOfPrefabAsset(m_SelectedObject)) {
+				
+				string prefabPath = AssetDatabase.GetAssetPath(m_SelectedObject);
+				List<GameObject> prefabInstanceReferences = new List<GameObject>();	// Use list to keep the order, not HashSet.
+
+				Transform[] childTransforms = go.GetComponentsInChildren<Transform>(true);
+				for (int i = 0; i < childTransforms.Length; ++i) {
+					Transform childTransform = childTransforms[i];
+					
+					if (SearchIsSlow) {
+						if (EditorUtility.DisplayCancelableProgressBar("Find Used By In Scene", $"Checking prefab links \"{childTransform.name}\"...", (float)i / childTransforms.Length)) {
+							throw new OperationCanceledException();
+						}
+					}
+
+					if (PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(childTransform) == prefabPath) {
+						GameObject root = PrefabUtility.GetNearestPrefabInstanceRoot(childTransform);
+						if (!prefabInstanceReferences.Contains(root)) {
+							prefabInstanceReferences.Add(root);
+						}
+					}
+				}
+				
+				m_References.AddRange(prefabInstanceReferences.Select(r => new Result(r, r.GetInstanceID(), "<Prefab Instance>")));
 			}
 
 			m_HierarchyReferences.AddRange(hierarchyResults.Values.Select(r => {
@@ -401,11 +436,13 @@ namespace DevLocker.Tools.AssetManagement
 			slimLabel.border = new RectOffset();
 			slimLabel.margin.left = 0;
 			slimLabel.margin.right = 0;
+			slimLabel.wordWrap = false;
 
 			UrlStyle = new GUIStyle(GUI.skin.label);
 			UrlStyle.normal.textColor = EditorGUIUtility.isProSkin ? new Color(1.00f, 0.65f, 0.00f) : Color.blue;
 			UrlStyle.hover.textColor = UrlStyle.normal.textColor;
 			UrlStyle.active.textColor = Color.red;
+			UrlStyle.wordWrap = false;
 
 			ResultPropertyStyle = new GUIStyle(slimLabel);
 			ResultPropertyStyle.padding = new RectOffset(0, 0, 1, 0);
@@ -448,6 +485,10 @@ namespace DevLocker.Tools.AssetManagement
 
 				if (GUILayout.Button(m_LockSelection ? LockToggleOnContent : LockToggleOffContent, GUILayout.Width(rightButtonsWidth))) {
 					m_LockSelection = !m_LockSelection;
+					if (!m_LockSelection) {
+						OnSelectionChange();
+						selectedObj = m_SelectedObject;	// Prev line changed selection.
+					}
 				}
 
 
@@ -519,23 +560,30 @@ namespace DevLocker.Tools.AssetManagement
 				}
 				EditorGUIUtility.AddCursorRect(GUILayoutUtility.GetLastRect(), MouseCursor.Link);
 
+				
+				if (result.TargetObj is GameObject) {
+					// Prefab instance references are not components.
+					GUILayout.Label("", GUILayout.Width(columnComponentWidth));
+					
+				} else {
+					displayContent.text = resultTypeName;
+					displayContent.tooltip = resultTypeName + " "; // Tooltip doesn't display if text & tooltip are the same?
+					if (GUILayout.Button(displayContent, UrlStyle, GUILayout.Width(columnComponentWidth))) {
 
-				displayContent.text = resultTypeName;
-				displayContent.tooltip = resultTypeName + " "; // Tooltip doesn't display if text & tooltip are the same?
-				if (GUILayout.Button(displayContent, UrlStyle, GUILayout.Width(columnComponentWidth))) {
+						MonoScript asset = AssetDatabase.FindAssets($"t:script {resultTypeName}")
+							.Select(AssetDatabase.GUIDToAssetPath)
+							.Where(p => System.IO.Path.GetFileNameWithoutExtension(p) == resultTypeName)
+							.Select(AssetDatabase.LoadAssetAtPath<MonoScript>)
+							.FirstOrDefault();
 
-					MonoScript asset = AssetDatabase.FindAssets($"t:script {resultTypeName}")
-						.Select(AssetDatabase.GUIDToAssetPath)
-						.Where(p => System.IO.Path.GetFileNameWithoutExtension(p) == resultTypeName)
-						.Select(AssetDatabase.LoadAssetAtPath<MonoScript>)
-						.FirstOrDefault();
-
-					if (asset) {
-						AssetDatabase.OpenAsset(asset);
-						GUIUtility.ExitGUI();
+						if (asset) {
+							AssetDatabase.OpenAsset(asset);
+							GUIUtility.ExitGUI();
+						}
 					}
+
+					EditorGUIUtility.AddCursorRect(GUILayoutUtility.GetLastRect(), MouseCursor.Link);
 				}
-				EditorGUIUtility.AddCursorRect(GUILayoutUtility.GetLastRect(), MouseCursor.Link);
 
 
 
@@ -552,7 +600,7 @@ namespace DevLocker.Tools.AssetManagement
 				EditorGUIUtility.labelWidth = prevLabelWidth;
 				EditorGUI.indentLevel = prevIndent;
 
-				if (GUILayout.Button(CopyButtonContent, CopyButtonStyle, GUILayout.Width(columnPropertyCopyWidth))) {
+				if (!(result.TargetObj is GameObject) && GUILayout.Button(CopyButtonContent, CopyButtonStyle, GUILayout.Width(columnPropertyCopyWidth))) {
 					const string arrayPattern = ".Array.data["; // Unity displays Array properties a bit ugly. No need to copy it.
 
 					EditorGUIUtility.systemCopyBuffer = result.PropertyName.Contains(arrayPattern)
