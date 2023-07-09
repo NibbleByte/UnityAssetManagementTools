@@ -10,7 +10,6 @@ using System.Threading.Tasks;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
-using Action = System.Action;
 using Object = UnityEngine.Object;
 
 namespace DevLocker.Tools.AssetManagement
@@ -293,7 +292,11 @@ namespace DevLocker.Tools.AssetManagement
 			if (targetEntries.Count == 0)
 				return;
 
+			PerformSearchWork(targetEntries);
+		}
 
+		private void PerformSearchWork(List<SearchEntryData> targetEntries)
+		{
 			var searchPaths = _searchFilter.GetFilteredPaths().ToArray();
 
 			_results.Reset();
@@ -313,8 +316,9 @@ namespace DevLocker.Tools.AssetManagement
 			foreach (var pathsBatch in Split(searchPaths, batchSize)) {
 				var progressHandle = new ProgressHandle(pathsBatch.Length);
 
-				var task = new Task<Dictionary<SearchEntryData, List<string>>>(() => IndexingJob(
-					pathsBatch, _searchMetas, _searchMainAssetOnly, appDataPath, targetEntries, progressHandle));
+				var task = new Task<Dictionary<SearchEntryData, List<string>>>(
+					() => SearchJob(pathsBatch, _searchMetas, _searchMainAssetOnly, appDataPath, targetEntries, progressHandle)
+				);
 
 				tasks.Add(task);
 				progressHandles.Add(progressHandle);
@@ -373,7 +377,7 @@ namespace DevLocker.Tools.AssetManagement
 			EditorUtility.ClearProgressBar();
 		}
 
-		private static Dictionary<SearchEntryData, List<string>> IndexingJob(string[] searchPaths, SearchMetas searchMetas,
+		private static Dictionary<SearchEntryData, List<string>> SearchJob(string[] searchPaths, SearchMetas searchMetas,
 			bool searchMainAssetOnly, string appDataPath, List<SearchEntryData> targetEntries, ProgressHandle progress)
 		{
 			var matches = new Dictionary<SearchEntryData, List<string>>();
@@ -446,56 +450,13 @@ namespace DevLocker.Tools.AssetManagement
 			}
 		}
 
-		private static List<string> TextIndexingJob(string[] searchPaths, SearchMetas searchMetas, string appDataPath,
-			string targetWord, ProgressHandle progress)
-		{
-			var matches = new List<string>();
-			var buffers = new FileBuffers();
-
-			for (int searchIndex = 0; searchIndex < searchPaths.Length; ++searchIndex) {
-				var searchPath = searchPaths[searchIndex];
-				var searchFullPath = $"{appDataPath}{searchPath.Remove(0, "Assets".Length)}";
-
-				progress.ItemsDone = searchIndex;
-				progress.LastProcessedPath = Path.GetFileName(searchPath);
-
-				if (progress.CancelRequested) {
-					break;
-				}
-
-				// Probably a folder. Skip it.
-				if (string.IsNullOrEmpty(Path.GetExtension(searchPath))) {
-					continue;
-				}
-
-				buffers.Clear();
-
-				if (searchMetas == SearchMetas.MetasOnly) {
-					buffers.AppendFile(searchFullPath + ".meta");
-				} else {
-					buffers.AppendFile(searchFullPath);
-
-					if (searchMetas == SearchMetas.SearchWithMetas) {
-						// Append a line break to reduce possibility of finding strings that start in
-						// a file and continues in the .meta
-						buffers.StringBuilder.Append("\n");
-						buffers.AppendFile(searchFullPath + ".meta");
-					}
-				}
-
-				if (buffers.StringBuilder.ToString().Contains(targetWord)) {
-					matches.Add(searchPath);
-				}
-			}
-
-			progress.ItemsDone = progress.ItemsTotal;
-
-			return matches;
-		}
-
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		private static bool ContentMatchesSearch(SearchEntryData searchData, string content, string searchPath, bool matchGuidOnly)
 		{
+			// Search by text, not object.
+			if (!string.IsNullOrEmpty(searchData.TargetText))
+				return content.Contains(searchData.TargetText);
+
 			// Embedded asset searching for references in the same main asset file.
 			if (searchData.IsSubAsset && searchData.MainAssetPath == searchPath) {
 				return content.Contains($"{{fileID: {searchData.LocalId}}}");   // If reference in the same file, guid is not used.
@@ -545,60 +506,8 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void PerformTextSearch(string text)
 		{
-			var searchPaths = _searchFilter.GetFilteredPaths().ToArray();
-
-			_results.Reset();
-
-			var data = new SearchResultData() { Root = this };
-			var appDataPath = Application.dataPath;
-
-			var allMatches = new List<string>();
-
-			var tasks = new List<Task<List<string>>>();
-			int threadsCount = Environment.ProcessorCount;
-			var batchSize = searchPaths.Length <= threadsCount ? 1 : Mathf.CeilToInt((float)searchPaths.Length / threadsCount);
-			var progressHandles = new List<ProgressHandle>();
-
-			foreach (var pathsBatch in Split(searchPaths, batchSize)) {
-				var progressHandle = new ProgressHandle(pathsBatch.Length);
-
-				var task = Task.Run(() => TextIndexingJob(
-					pathsBatch, _searchMetas, appDataPath, text, progressHandle));
-
-				tasks.Add(task);
-				progressHandles.Add(progressHandle);
-			}
-
-			while (tasks.Any(a => a.Status == TaskStatus.Running)) {
-				ShowTasksProgress(progressHandles, searchPaths.Length, tasks.Count);
-			}
-
-			foreach (var task in tasks) {
-				ShowTasksProgress(progressHandles, searchPaths.Length, tasks.Count);
-				allMatches.AddRange(task.Result);
-			}
-
-			EditorUtility.DisplayProgressBar("Search References FAST", "Reducing results...", 1);
-
-			foreach (var searchPath in allMatches) {
-
-				var target = AssetDatabase.LoadAssetAtPath<Object>(searchPath);
-
-				// If object is invalid for some reason - skip. (script of scriptable object was deleted or something)
-				if (target == null) {
-					continue;
-				}
-
-				data.Found.Add(target);
-				_results.AddType(target.GetType());
-
-			}
-
-			if (data.Found.Count > 0) {
-				_results.Add(this, data);
-			}
-
-			EditorUtility.ClearProgressBar();
+			PerformSearchWork(new List<SearchEntryData>() { new SearchEntryData(text, this) });
+			return;
 		}
 
 		/// <summary>
@@ -696,7 +605,7 @@ namespace DevLocker.Tools.AssetManagement
 				var foldOutRect = EditorGUILayout.GetControlRect(false, EditorGUIUtility.singleLineHeight, GUILayout.Width(12f));
 				data.ShowDetails = EditorGUI.Foldout(foldOutRect, data.ShowDetails, "");
 				EditorGUILayout.ObjectField(data.Root, data.Root?.GetType(), false);
-				if (GUILayout.Button("X", GUILayout.Width(20.0f), GUILayout.Height(14.0f))) {
+				if (GUILayout.Button(new GUIContent("X", "Remove entry from list"), GUILayout.Width(20.0f), GUILayout.Height(16.0f))) {
 					_results.Data.RemoveAt(resultIndex);
 					--resultIndex;
 				}
@@ -717,7 +626,7 @@ namespace DevLocker.Tools.AssetManagement
 						EditorGUILayout.BeginHorizontal();
 
 						EditorGUILayout.ObjectField(found, found?.GetType() ?? typeof(Object), true);
-						if (GUILayout.Button("X", GUILayout.Width(20.0f), GUILayout.Height(14.0f))) {
+						if (GUILayout.Button(new GUIContent("X", "Remove entry from list"), GUILayout.Width(20.0f), GUILayout.Height(14.0f))) {
 							data.Found.RemoveAt(i);
 							--i;
 						}
@@ -1069,6 +978,7 @@ namespace DevLocker.Tools.AssetManagement
 
 		private class SearchEntryData
 		{
+			public string TargetText { get; }	// For searching by text.
 			public Object Target { get; }
 			public bool IsSubAsset { get; }
 			public string MainAssetPath { get; }
@@ -1088,6 +998,12 @@ namespace DevLocker.Tools.AssetManagement
 				if (Target is GameObject) {
 					LocalId = null;
 				}
+			}
+
+			public SearchEntryData(string targetText, SearchReferencesFast targetContext)
+			{
+				TargetText = targetText;
+				Target = targetContext;	// We still need some Target to show (so the rest of the code can work).
 			}
 
 			public static bool IsSupported(Object target)
