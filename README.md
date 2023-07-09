@@ -121,6 +121,6 @@ In the screenshot below:
 ![SearchReferencesFast](Docs/Screenshots/SearchReferencesFast.png)
 
 ## Find References In Scene
-Search references to specified GameObject or component in the current scene (or prefab edit stage).
-Open by right click on GameObject and selecting "Find References In Scene". You can additionally drag in any component as well.
+Search references to specified GameObject or **component** in the current scene (or prefab edit stage).
+Open by right click on GameObject and selecting "Find References In Scene". You can additionally drag in any **component** as well.
 ![FindReferencesInSceneWindow](Docs/Screenshots/FindReferencesInSceneWindow.png)
