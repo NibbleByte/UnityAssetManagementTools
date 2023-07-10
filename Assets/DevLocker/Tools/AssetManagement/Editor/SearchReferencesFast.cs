@@ -462,26 +462,33 @@ namespace DevLocker.Tools.AssetManagement
 				return content.Contains($"{{fileID: {searchData.LocalId}}}");   // If reference in the same file, guid is not used.
 
 			} else {
-				int guidIndex = content.IndexOf(searchData.Guid);
-				if (guidIndex < 0)
-					return false;
 
 				if (matchGuidOnly || string.IsNullOrEmpty(searchData.LocalId))
-					return true;
+					return content.Contains(searchData.Guid);
+					
+				int guidIndex = 0;
+				while (true) {
+					
+					guidIndex = content.IndexOf(searchData.Guid, guidIndex + 1, StringComparison.Ordinal);
 
-				int startOfLineIndex = content.LastIndexOf('\n', guidIndex);
-				if (startOfLineIndex < 0) startOfLineIndex = 0;
+					if (guidIndex < 0)
+						return false;
 
-				// Local id is to the left of the guid. Example:
-				// - target: {fileID: 6986883487782155098, guid: af7e5b759d61c1b4fbf64e33d8f248dc, type: 3}
-				int localIdIndex = content.IndexOf(searchData.LocalId, startOfLineIndex);
-				if (localIdIndex < 0)
-					return false;
+					int startOfLineIndex = content.LastIndexOf('\n', guidIndex);
+					if (startOfLineIndex < 0) startOfLineIndex = 0;
 
-				int endOfLineIndex = content.IndexOf('\n', guidIndex);
-				if (endOfLineIndex < 0) endOfLineIndex = content.Length;
+					// Local id is to the left of the guid. Example:
+					// - target: {fileID: 6986883487782155098, guid: af7e5b759d61c1b4fbf64e33d8f248dc, type: 3}
+					int localIdIndex = content.IndexOf(searchData.LocalId, startOfLineIndex, StringComparison.Ordinal);
+					if (localIdIndex < 0)
+						return false;
 
-				return startOfLineIndex <= localIdIndex && localIdIndex < endOfLineIndex;
+					int endOfLineIndex = content.IndexOf('\n', guidIndex);
+					if (endOfLineIndex < 0) endOfLineIndex = content.Length;
+
+					if (startOfLineIndex <= localIdIndex && localIdIndex < endOfLineIndex)
+						return true;
+				}
 			}
 		}
 
@@ -1023,6 +1030,8 @@ namespace DevLocker.Tools.AssetManagement
 				long localId;
 				AssetDatabase.TryGetGUIDAndLocalFileIdentifier(target, out guid, out localId);
 				Guid = guid;
+				
+				
 
 				// LocalId is 102900000 for folders, scenes and unknown asset types. Probably marks this as invalid id.
 				// For unknown asset types, which actually have some localIds inside them (custom made), this will be invalid when linked in places.
