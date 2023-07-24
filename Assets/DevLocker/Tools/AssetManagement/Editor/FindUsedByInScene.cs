@@ -63,7 +63,7 @@ namespace DevLocker.Tools.AssetManagement
 		private int m_SelectionHistoryIndex = 0;
 
 		private SelectionTrackingType m_SelectionTracking = SelectionTrackingType.SceneObjects;
-		private bool m_LockSelection = false;
+		private bool m_LockSelection = true;
 
 		private List<Result> m_References = new List<Result>();
 		private List<HierarchySummaryResult> m_HierarchyReferences = new List<HierarchySummaryResult>();
@@ -83,8 +83,18 @@ namespace DevLocker.Tools.AssetManagement
 		private System.Diagnostics.Stopwatch m_SearchStopwatch = new System.Diagnostics.Stopwatch();
 		private bool SearchIsSlow => m_SearchStopwatch.ElapsedMilliseconds > 0.4f * 1000;
 
-		[MenuItem("GameObject/-= Find Used By In Scene =-", false, 0)]
+		[MenuItem("Tools/Asset Management/Find Used By In Scene", false, 58)]
 		public static void OpenWindow()
+		{
+			var window = GetWindow<FindUsedByInScene>("Used By ...");
+			window.minSize = new Vector2(150f, 200f);
+
+			window.TrySelect(Selection.activeGameObject);
+			window.m_LockSelection = false;
+		}
+
+		[MenuItem("GameObject/-= Find Used By In Scene =-", false, 0)]
+		public static void OpenWindowSceneObject()
 		{
 			var window = GetWindow<FindUsedByInScene>("Used By ...");
 			window.minSize = new Vector2(150f, 200f);
@@ -94,7 +104,7 @@ namespace DevLocker.Tools.AssetManagement
 		}
 
 		[MenuItem("CONTEXT/Component/Find Used By In Scene", false, 1000)]
-		public static void OpenWindowComponent(MenuCommand command)
+		public static void OpenWindowSceneComponent(MenuCommand command)
 		{
 			var window = GetWindow<FindUsedByInScene>("Used By ...");
 			window.minSize = new Vector2(150f, 200f);
@@ -242,7 +252,9 @@ namespace DevLocker.Tools.AssetManagement
 					List<GameObject> allObjects = new List<GameObject>();
 
 					for (int i = 0; i < SceneManager.sceneCount; ++i) {
-						allObjects.AddRange(SceneManager.GetSceneAt(i).GetRootGameObjects());
+						if (SceneManager.GetSceneAt(i).isLoaded) {
+							allObjects.AddRange(SceneManager.GetSceneAt(i).GetRootGameObjects());
+						}
 					}
 
 					for(int i = 0; i < allObjects.Count; ++i) {
