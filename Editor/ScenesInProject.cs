@@ -1132,9 +1132,15 @@ namespace DevLocker.Tools.AssetManagement
 			SearchLabelStyle = new GUIStyle(EditorStyles.boldLabel);
 			SearchLabelStyle.margin.top = 1;
 
+#if UNITY_2022_3_OR_NEWER
+			SearchFieldStyle = GUI.skin.GetStyle("ToolbarSearchTextField");
+			SearchFieldCancelStyle = GUI.skin.GetStyle("ToolbarSearchCancelButton");
+			SearchFieldCancelEmptyStyle = GUI.skin.GetStyle("ToolbarSearchCancelButtonEmpty");
+#else
 			SearchFieldStyle = GUI.skin.GetStyle("ToolbarSeachTextField");
 			SearchFieldCancelStyle = GUI.skin.GetStyle("ToolbarSeachCancelButton");
 			SearchFieldCancelEmptyStyle = GUI.skin.GetStyle("ToolbarSeachCancelButtonEmpty");
+#endif
 
 			ToolbarButtonStyle = new GUIStyle(EditorStyles.toolbarButton);
 			ToolbarButtonStyle.padding = new RectOffset();
