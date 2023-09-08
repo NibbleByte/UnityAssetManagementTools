@@ -63,7 +63,8 @@ namespace DevLocker.Tools.AssetManagement
 		private int m_SelectionHistoryIndex = 0;
 
 		private SelectionTrackingType m_SelectionTracking = SelectionTrackingType.SceneObjects;
-		private bool m_LockSelection = true;
+		[SerializeField]
+		private bool m_LockSelection = false;
 
 		private List<Result> m_References = new List<Result>();
 		private List<HierarchySummaryResult> m_HierarchyReferences = new List<HierarchySummaryResult>();
