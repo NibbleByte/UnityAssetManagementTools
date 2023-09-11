@@ -22,11 +22,32 @@ namespace DevLocker.Tools.AssetManagement
 	/// </summary>
 	public class SearchReferencesFast : EditorWindow
 	{
+		public interface IResultProcessor
+		{
+			public string Name => GetType().Name;
+			public void ProcessResults(IEnumerable<UnityEngine.Object> objects);
+		}
+
+		private static readonly List<IResultProcessor> ResultProcessors;
+
+		static SearchReferencesFast()
+		{
+			var implementingTypes =  TypeCache.GetTypesDerivedFrom<IResultProcessor>().ToList();
+
+			ResultProcessors = new List<IResultProcessor>();
+			
+			foreach (var implType in implementingTypes) {
+				var resultProcessor = (IResultProcessor) Activator.CreateInstance(implType);
+				ResultProcessors.Add(resultProcessor);	
+			}
+		}
+		
 		[MenuItem("Tools/Asset Management/Search References (FAST)", false, 61)]
 		static void Init()
 		{
 			var window = GetWindow<SearchReferencesFast>("Search References");
 			window._searchFilter.SetTemplateEnabled("Scenes", true);
+			window._selectedResultProcessor = 0;
 		}
 
 		private void OnSelectionChange()
@@ -59,7 +80,7 @@ namespace DevLocker.Tools.AssetManagement
 		private bool _searchText = false;
 		private bool _searchMainAssetOnly = false;
 		private string _textToSearch;
-
+		private int _selectedResultProcessor;
 
 		private enum SearchMetas
 		{
@@ -551,7 +572,7 @@ namespace DevLocker.Tools.AssetManagement
 			}
 			return output;
 		}
-
+		
 		private void DrawResults()
 		{
 			GUILayout.Label("Results:", EditorStyles.boldLabel);
@@ -592,10 +613,34 @@ namespace DevLocker.Tools.AssetManagement
 				DrawReplaceAllPrefabs();
 
 				DrawSaveResultsSlots();
+
+				if (ResultProcessors.Count > 0) {
+					string[] processorNames = ResultProcessors.Select(rp => rp.Name).ToArray();
+
+					_selectedResultProcessor = EditorGUILayout.Popup(
+						_selectedResultProcessor,
+						processorNames,
+						GUILayout.Width(150));
+					
+					if (GUILayout.Button(EditorGUIUtility.IconContent("PlayButton"), GUILayout.ExpandWidth(false))) {
+							IEnumerable<UnityEngine.Object> results = _results.Data
+								.Where(
+									rd => rd.Value.Root != null &&
+									      (string.IsNullOrEmpty(_resultsSearchEntryFilter) ||
+									       rd.Value.Root.name.IndexOf(_resultsSearchEntryFilter, StringComparison.OrdinalIgnoreCase) !=
+									       -1))
+								.SelectMany(rd => rd.Value.Found)
+								.Where(
+									rd => rd != null &&
+									      (string.IsNullOrEmpty(_resultsFoundEntryFilter) ||
+									       rd.name.IndexOf(_resultsFoundEntryFilter, StringComparison.OrdinalIgnoreCase) != -1));
+
+							ResultProcessors[_selectedResultProcessor].ProcessResults(results);
+					}
+				}
 			}
+			
 			EditorGUILayout.EndHorizontal();
-
-
 
 			EditorGUILayout.BeginVertical();
 			_scrollPos = EditorGUILayout.BeginScrollView(_scrollPos, false, false);
