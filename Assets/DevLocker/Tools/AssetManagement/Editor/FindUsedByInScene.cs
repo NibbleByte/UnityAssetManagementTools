@@ -241,8 +241,8 @@ namespace DevLocker.Tools.AssetManagement
 				}
 			}
 
-			PrefabStage prefabStage = selectedGO
-				? PrefabStageUtility.GetPrefabStage(selectedGO)
+			PrefabStage prefabStage = selectedGO && !AssetDatabase.Contains(selectedGO)
+				? PrefabStageUtility.GetPrefabStage(selectedGO) ?? PrefabStageUtility.GetCurrentPrefabStage()
 				: PrefabStageUtility.GetCurrentPrefabStage()
 				;
 
