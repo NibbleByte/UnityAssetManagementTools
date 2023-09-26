@@ -303,6 +303,10 @@ namespace DevLocker.Tools.AssetManagement
 				}
 			}
 
+			bool isAssetSelected = AssetDatabase.Contains(m_SelectedObject);
+			string selectedAssetPath = AssetDatabase.GetAssetPath(m_SelectedObject);
+			bool isMainAssetSelected = isAssetSelected && AssetDatabase.LoadMainAssetAtPath(selectedAssetPath) == m_SelectedObject;
+
 			var components = go.GetComponentsInChildren<Component>(true);
 			for(int i = 0; i < components.Length; ++i) {
 				Component component = components[i];
@@ -361,6 +365,24 @@ namespace DevLocker.Tools.AssetManagement
 								break;
 							}
 						}
+
+						// For materials, meshes and sprites that are sub-assets AND main asset is selected (texture, model).
+						// Prefabs and Models should be covered by the check above.
+						if (isAssetSelected && isMainAssetSelected && !(sp.objectReferenceValue is GameObject)) {
+							string refAssetPath = AssetDatabase.GetAssetPath(sp.objectReferenceValue);
+
+							if (!string.IsNullOrEmpty(refAssetPath) && refAssetPath == selectedAssetPath) {
+								int instanceId = component.gameObject.GetInstanceID();
+								m_References.Add(new Result(component, instanceId, propName));
+
+								hierarchyResults.TryGetValue(instanceId, out hierarchyResult);
+								hierarchyResult.GameObjectInstanceID = instanceId;
+								hierarchyResult.Summary += $"{component.GetType().Name}.{propName}\n";
+								hierarchyResults[instanceId] = hierarchyResult;
+								break;
+							}
+						}
+
 					}
 				}
 			}
