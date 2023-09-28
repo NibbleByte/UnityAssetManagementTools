@@ -62,7 +62,7 @@ namespace DevLocker.Tools.AssetManagement
 		private List<Object> m_SelectionHistory = new List<Object>();
 		private int m_SelectionHistoryIndex = 0;
 
-		private SelectionTrackingType m_SelectionTracking = SelectionTrackingType.SceneObjects;
+		private SelectionTrackingType m_SelectionTracking = (SelectionTrackingType)~0;
 		[SerializeField]
 		private bool m_LockSelection = false;
 
@@ -116,7 +116,7 @@ namespace DevLocker.Tools.AssetManagement
 
 		void OnEnable()
 		{
-			m_SelectionTracking = (SelectionTrackingType)EditorPrefs.GetInt("DevLocker.UsedBy.SelectionTracking", (int) SelectionTrackingType.SceneObjects);
+			m_SelectionTracking = (SelectionTrackingType)EditorPrefs.GetInt("DevLocker.UsedBy.SelectionTracking", (int)(SelectionTrackingType)~0);
 
 			Selection.selectionChanged += OnSelectionChange;
 
