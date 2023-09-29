@@ -11,6 +11,7 @@ Small collection of tools for Unity used to manage your assets. Part of the [Dev
 * [Search Duplicate Assets](#search-duplicate-assets)
 * [Search References Fast!](#search-references-fast) *(discontinued)*
 * [Search Prefabs Components](#search-prefabs-components)
+* [Asset Context Menus](#asset-context-menus)
 
 ## Installation
 * Asset Store plugin: 
@@ -124,3 +125,12 @@ In the screenshot below:
 Search references to specified GameObject or **component** in the current scene (or prefab edit stage).
 Open by right click on GameObject and selecting "Find References In Scene". You can additionally drag in any **component** as well.
 ![FindReferencesInSceneWindow](Docs/Screenshots/FindReferencesInSceneWindow.png)
+
+## Asset Context Menus
+Useful context menus:
+* Copy selected guids or asset paths
+* Edit selected assets with third-party app that is already installed on the machine
+
+![AssetContextMenus-Copy](Docs/Screenshots/AssetContextMenus-Copy.png)
+
+![AssetContextMenus-EditWith](Docs/Screenshots/AssetContextMenus-EditWith.png)
