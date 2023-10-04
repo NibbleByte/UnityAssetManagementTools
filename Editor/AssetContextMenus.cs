@@ -162,11 +162,21 @@ namespace DevLocker.Tools
 
 		[MenuItem("Assets/Edit With/Paint.NET", false, EditWith_MenuItemPriorityStart + 20)]
 		private static void EditWithPaintDotNet()
-			=> EditWithApp("paintdotnet.exe", GetPathsOfAssetsJoined(Selection.objects, false));
-		
+		{
+			if (TryEditWithApp("paint.net.1", GetPathsOfAssetsJoined(Selection.objects, false)))
+				return;
+
+			EditWithApp("paintdotnet.exe", GetPathsOfAssetsJoined(Selection.objects, false));
+		}
+
 		[MenuItem("Assets/Edit With/Krita", false, EditWith_MenuItemPriorityStart + 22)]
 		private static void EditWithKrita()
-			=> EditWithApp("krita.exe", GetPathsOfAssetsJoined(Selection.objects, false));
+		{
+			if (TryEditWithApp("Krita.Document", GetPathsOfAssetsJoined(Selection.objects, false)))
+				return;
+
+			EditWithApp("krita.exe", GetPathsOfAssetsJoined(Selection.objects, false));
+		}
 
 		[MenuItem("Assets/Edit With/Photoshop", false, EditWith_MenuItemPriorityStart + 24)]
 		private static void EditWithPhotoshop()
@@ -205,17 +215,22 @@ namespace DevLocker.Tools
 				AssetDatabase.OpenAsset(Selection.objects[0]);
 				return;
 			}
-
+			
 			// Assume this is fbx or other model file. It can't be opened directly, it needs to be imported.
-			EditWithApp("blender.exe", $"--python-expr \"" +    // start python expression.
+			// Idea by: https://blog.kikicode.com/2018/12/double-click-fbx-files-to-import-to.html
+			string args = $"--python-expr \"" + // start python expression.
 
-				$"import bpy;\n" +
-				//$"bpy.context.preferences.view.show_splash=False;\n" + // This is persistent so skip it.
-				"bpy.ops.scene.new(type='EMPTY');\n" +
-				$"bpy.ops.import_scene.fbx(filepath=r'{fullPath}');\n" +
+						  $"import bpy;\n" +
+						  //$"bpy.context.preferences.view.show_splash=False;\n" + // This is persistent so skip it.
+						  "bpy.ops.scene.new(type='EMPTY');\n" +
+						  $"bpy.ops.import_scene.fbx(filepath=r'{fullPath}');\n" +
 
-				$"\""   // End python expression
-				); // Idea by: https://blog.kikicode.com/2018/12/double-click-fbx-files-to-import-to.html
+						  $"\"";   // End python expression
+
+			if (TryEditWithApp("blendfile", args))
+				return;
+			
+			EditWithApp("blender.exe", args); 
 		}
 
 
