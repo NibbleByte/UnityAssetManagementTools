@@ -35,13 +35,13 @@ namespace DevLocker.Tools.AssetManagement
 			var implementingTypes =  TypeCache.GetTypesDerivedFrom<IResultProcessor>().ToList();
 
 			ResultProcessors = new List<IResultProcessor>();
-			
+
 			foreach (var implType in implementingTypes) {
 				var resultProcessor = (IResultProcessor) Activator.CreateInstance(implType);
-				ResultProcessors.Add(resultProcessor);	
+				ResultProcessors.Add(resultProcessor);
 			}
 		}
-		
+
 		[MenuItem("Tools/Asset Management/Search References (FAST)", false, 61)]
 		static void Init()
 		{
@@ -347,8 +347,9 @@ namespace DevLocker.Tools.AssetManagement
 				task.Start();
 			}
 
-			while (tasks.Any(a => a.Status == TaskStatus.Running)) {
+			while (tasks.Any(a => !a.IsCompleted)) {
 				ShowTasksProgress(progressHandles, searchPaths.Length, tasks.Count);
+				System.Threading.Thread.Sleep(200);
 			}
 
 			foreach (var task in tasks) {
@@ -486,10 +487,10 @@ namespace DevLocker.Tools.AssetManagement
 
 				if (matchGuidOnly || string.IsNullOrEmpty(searchData.LocalId))
 					return content.Contains(searchData.Guid);
-					
+
 				int guidIndex = 0;
 				while (true) {
-					
+
 					guidIndex = content.IndexOf(searchData.Guid, guidIndex + 1, StringComparison.Ordinal);
 
 					if (guidIndex < 0)
@@ -572,7 +573,7 @@ namespace DevLocker.Tools.AssetManagement
 			}
 			return output;
 		}
-		
+
 		private void DrawResults()
 		{
 			GUILayout.Label("Results:", EditorStyles.boldLabel);
@@ -621,7 +622,7 @@ namespace DevLocker.Tools.AssetManagement
 						_selectedResultProcessor,
 						processorNames,
 						GUILayout.Width(150));
-					
+
 					if (GUILayout.Button(EditorGUIUtility.IconContent("PlayButton"), GUILayout.ExpandWidth(false))) {
 							IEnumerable<UnityEngine.Object> results = _results.Data
 								.Where(
@@ -639,7 +640,7 @@ namespace DevLocker.Tools.AssetManagement
 					}
 				}
 			}
-			
+
 			EditorGUILayout.EndHorizontal();
 
 			EditorGUILayout.BeginVertical();
@@ -1075,8 +1076,8 @@ namespace DevLocker.Tools.AssetManagement
 				long localId;
 				AssetDatabase.TryGetGUIDAndLocalFileIdentifier(target, out guid, out localId);
 				Guid = guid;
-				
-				
+
+
 
 				// LocalId is 102900000 for folders, scenes and unknown asset types. Probably marks this as invalid id.
 				// For unknown asset types, which actually have some localIds inside them (custom made), this will be invalid when linked in places.
