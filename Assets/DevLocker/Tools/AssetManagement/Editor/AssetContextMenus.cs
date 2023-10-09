@@ -48,7 +48,7 @@ namespace DevLocker.Tools
 			// Selection.objects my have sub-assets (for example embedded fbx materials).
 			// All sub assets have the same guid, but different local id.
 			var objectsNames = Selection.objects.Select(o => o.name).ToList();
-			
+
 			// Get by selected guids.
 			// Selection.assetGUIDs includes selected folders on the left in two-column project view (Selection.objects does not).
 			// Selected sub-assets will return the main asset guid.
@@ -125,26 +125,29 @@ namespace DevLocker.Tools
 
 		#region Text Editing
 
+		private const string PrettyKey_NotepadPlusPlus = "Notepad++";
+		private const string PrettyKey_Sublime = "Sublime";
+
 		[MenuItem("Assets/Edit With/Notepad++", false, EditWith_MenuItemPriorityStart + 0)]
 		private static void EditWithNotepadPlusPlus()
-			=> EditWithApp("notepad++.exe", GetPathsOfAssetsJoined(Selection.objects, false), _notepadPaths);
+			=> EditWithApp(PrettyKey_NotepadPlusPlus, "notepad++.exe", GetPathsOfAssetsJoined(Selection.objects, false), _notepadPaths);
 
 		[MenuItem("Assets/Edit With/Notepad++ Metas", false, EditWith_MenuItemPriorityStart + 1)]
 		private static void EditWithNotepadPlusPlusMetas()
-			=> EditWithApp("notepad++.exe", GetPathsOfAssetsJoined(Selection.objects, true), _notepadPaths);
-		
+			=> EditWithApp(PrettyKey_NotepadPlusPlus,"notepad++.exe", GetPathsOfAssetsJoined(Selection.objects, true), _notepadPaths);
+
 		[MenuItem("Assets/Edit With/Sublime", false, EditWith_MenuItemPriorityStart + 2)]
 		private static void EditWithSublime()
-			=> EditWithApp("subl.exe", GetPathsOfAssetsJoined(Selection.objects, false), _sublimePaths);
-		
+			=> EditWithApp(PrettyKey_Sublime, "subl.exe", GetPathsOfAssetsJoined(Selection.objects, false), _sublimePaths);
+
 		[MenuItem("Assets/Edit With/Sublime Metas", false, EditWith_MenuItemPriorityStart + 3)]
 		private static void EditWithSublimeMetas()
-			=> EditWithApp("subl.exe", GetPathsOfAssetsJoined(Selection.objects, true), _sublimePaths);
-		
+			=> EditWithApp(PrettyKey_Sublime, "subl.exe", GetPathsOfAssetsJoined(Selection.objects, true), _sublimePaths);
+
 		[MenuItem("Assets/Edit With/Scripts IDE", false, EditWith_MenuItemPriorityStart + 4)]
 		private static void EditWithIDE()
 			=> TryEditWithScriptsIDE(GetPathsOfAssetsJoined(Selection.objects, false));
-		
+
 		[MenuItem("Assets/Edit With/Scripts IDE Metas", false, EditWith_MenuItemPriorityStart + 5)]
 		private static void EditWithIDEMetas()
 			=> TryEditWithScriptsIDE(GetPathsOfAssetsJoined(Selection.objects, true));
@@ -160,13 +163,18 @@ namespace DevLocker.Tools
 
 		#region Textures Editing
 
+		private const string PrettyKey_PaintDotNet = "Paint.Net";
+		private const string PrettyKey_Krita = "Krita";
+		private const string PrettyKey_Photoshop = "Photoshop";
+		private const string PrettyKey_Gimp = "Gimp";
+
 		[MenuItem("Assets/Edit With/Paint.NET", false, EditWith_MenuItemPriorityStart + 20)]
 		private static void EditWithPaintDotNet()
 		{
 			if (TryEditWithApp("paint.net.1", GetPathsOfAssetsJoined(Selection.objects, false)))
 				return;
 
-			EditWithApp("paintdotnet.exe", GetPathsOfAssetsJoined(Selection.objects, false));
+			EditWithApp(PrettyKey_PaintDotNet, "paintdotnet.exe", GetPathsOfAssetsJoined(Selection.objects, false));
 		}
 
 		[MenuItem("Assets/Edit With/Krita", false, EditWith_MenuItemPriorityStart + 22)]
@@ -175,7 +183,7 @@ namespace DevLocker.Tools
 			if (TryEditWithApp("Krita.Document", GetPathsOfAssetsJoined(Selection.objects, false)))
 				return;
 
-			EditWithApp("krita.exe", GetPathsOfAssetsJoined(Selection.objects, false));
+			EditWithApp(PrettyKey_Krita, "krita.exe", GetPathsOfAssetsJoined(Selection.objects, false));
 		}
 
 		[MenuItem("Assets/Edit With/Photoshop", false, EditWith_MenuItemPriorityStart + 24)]
@@ -184,12 +192,12 @@ namespace DevLocker.Tools
 			if (TryEditWithApp("Photoshop.exe", GetPathsOfAssetsJoined(Selection.objects, false)))
 				return;
 
-			EditWithApp("adbps", GetPathsOfAssetsJoined(Selection.objects, false));
+			EditWithApp(PrettyKey_Photoshop, "adbps", GetPathsOfAssetsJoined(Selection.objects, false));
 		}
 
 		[MenuItem("Assets/Edit With/Gimp", false, EditWith_MenuItemPriorityStart + 26)]
 		private static void EditWithGimp()
-			=> EditWithApp("GIMP2.png", GetPathsOfAssetsJoined(Selection.objects, false));
+			=> EditWithApp(PrettyKey_Gimp, "GIMP2.png", GetPathsOfAssetsJoined(Selection.objects, false));
 
 
 		[MenuItem("Assets/Edit With/Paint.NET", true, EditWith_MenuItemPriorityStart + 20)]
@@ -203,6 +211,8 @@ namespace DevLocker.Tools
 
 		#region Models Editing
 
+		private const string PrettyKey_Blender = "Blender";
+
 		[MenuItem("Assets/Edit With/Blender", false, EditWith_MenuItemPriorityStart + 40)]
 		private static void EditWithBlender()
 		{
@@ -215,7 +225,7 @@ namespace DevLocker.Tools
 				AssetDatabase.OpenAsset(Selection.objects[0]);
 				return;
 			}
-			
+
 			// Assume this is fbx or other model file. It can't be opened directly, it needs to be imported.
 			// Idea by: https://blog.kikicode.com/2018/12/double-click-fbx-files-to-import-to.html
 			string args = $"--python-expr \"" + // start python expression.
@@ -229,14 +239,34 @@ namespace DevLocker.Tools
 
 			if (TryEditWithApp("blendfile", args))
 				return;
-			
-			EditWithApp("blender.exe", args); 
+
+			EditWithApp(PrettyKey_Blender, "blender.exe", args);
 		}
 
 
 		[MenuItem("Assets/Edit With/Blender", true, EditWith_MenuItemPriorityStart + 40)]
 		private static bool EditWithModelValidate()
 			=> Selection.objects.All(o => PrefabUtility.GetPrefabAssetType(o) == PrefabAssetType.Model);
+
+		#endregion
+
+		#region Custom Editing
+
+		private const string PrettyKey_Custom1 = "Custom 1";
+		private const string PrettyKey_Custom2 = "Custom 2";
+		private const string PrettyKey_Custom3 = "Custom 3";
+
+		[MenuItem("Assets/Edit With/Custom 1", false, EditWith_MenuItemPriorityStart + 60)]
+		private static void EditWithCustom1()
+			=> EditWithApp(PrettyKey_Custom1, "", GetPathsOfAssetsJoined(Selection.objects, false));
+
+		[MenuItem("Assets/Edit With/Custom 2", false, EditWith_MenuItemPriorityStart + 61)]
+		private static void EditWithCustom2()
+			=> EditWithApp(PrettyKey_Custom2, "", GetPathsOfAssetsJoined(Selection.objects, false));
+
+		[MenuItem("Assets/Edit With/Custom 3", false, EditWith_MenuItemPriorityStart + 62)]
+		private static void EditWithCustom3()
+			=> EditWithApp(PrettyKey_Custom3, "", GetPathsOfAssetsJoined(Selection.objects, false));
 
 		#endregion
 
@@ -255,11 +285,47 @@ namespace DevLocker.Tools
 			return string.Join(separator, paths);
 		}
 
-		private static void EditWithApp(string appRegistryName, string args, params string[] fallbackPaths)
+		[MenuItem("Assets/Edit With/Clear Saved App Paths", false, EditWith_MenuItemPriorityStart + 80)]
+		private static void ClearSavedAppPaths()
 		{
+			EditorPrefs.DeleteKey($"AssetContextMenus_{PrettyKey_NotepadPlusPlus}");
+			EditorPrefs.DeleteKey($"AssetContextMenus_{PrettyKey_Sublime}");
+
+			EditorPrefs.DeleteKey($"AssetContextMenus_{PrettyKey_PaintDotNet}");
+			EditorPrefs.DeleteKey($"AssetContextMenus_{PrettyKey_Krita}");
+			EditorPrefs.DeleteKey($"AssetContextMenus_{PrettyKey_Photoshop}");
+			EditorPrefs.DeleteKey($"AssetContextMenus_{PrettyKey_Gimp}");
+
+			EditorPrefs.DeleteKey($"AssetContextMenus_{PrettyKey_Blender}");
+
+			EditorPrefs.DeleteKey($"AssetContextMenus_{PrettyKey_Custom1}");
+			EditorPrefs.DeleteKey($"AssetContextMenus_{PrettyKey_Custom2}");
+			EditorPrefs.DeleteKey($"AssetContextMenus_{PrettyKey_Custom3}");
+		}
+
+		private static void EditWithApp(string prettyName, string appRegistryName, string args, params string[] fallbackPaths)
+		{
+			string prefsPath = EditorPrefs.GetString($"AssetContextMenus_{prettyName}");
+
+			if (!string.IsNullOrEmpty(prefsPath) && File.Exists(prefsPath)) {
+				System.Array.Resize(ref fallbackPaths, fallbackPaths.Length + 1);
+				fallbackPaths[fallbackPaths.Length - 1] = prefsPath;
+			}
+
 			if (!TryEditWithApp(appRegistryName, args, fallbackPaths)) {
-				EditorUtility.DisplayDialog("Error", $"Program \"{appRegistryName}\" is not found.", "Sad");
-				return;
+
+				if (string.IsNullOrWhiteSpace(prefsPath) || !File.Exists(prefsPath)) {
+					prefsPath = EditorUtility.OpenFilePanel($"Locate {prettyName} Executable", "C:\\", "exe");
+
+					if (!string.IsNullOrEmpty(prefsPath) && File.Exists(prefsPath)) {
+						EditorPrefs.SetString($"AssetContextMenus_{prettyName}", prefsPath);
+
+						if (TryEditWithApp(appRegistryName, args, prefsPath))
+							return;
+					}
+				}
+
+				EditorUtility.DisplayDialog("Error", $"Program \"{prettyName}\" is not found.", "Sad!");
 			}
 		}
 
@@ -287,36 +353,39 @@ namespace DevLocker.Tools
 
 		public static bool TryEditWithApp(string appRegistryName, string args, params string[] fallbackPaths)
 		{
-			const string appPaths = @"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{0}";
-			const string shellCommands = @"SOFTWARE\Classes\{0}\shell\open\command";
-			const string shellCommands2 = @"SOFTWARE\Classes\Applications\{0}\shell\open\command";
+			if (!string.IsNullOrWhiteSpace(appRegistryName)) {
 
-			// https://stackoverflow.com/a/909966/4612666
-			Microsoft.Win32.RegistryKey fileKey = null
-				?? Microsoft.Win32.Registry.CurrentUser.OpenSubKey(string.Format(appPaths, appRegistryName))
-				?? Microsoft.Win32.Registry.LocalMachine.OpenSubKey(string.Format(appPaths, appRegistryName))
+				const string appPaths = @"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{0}";
+				const string shellCommands = @"SOFTWARE\Classes\{0}\shell\open\command";
+				const string shellCommands2 = @"SOFTWARE\Classes\Applications\{0}\shell\open\command";
 
-				?? Microsoft.Win32.Registry.CurrentUser.OpenSubKey(string.Format(shellCommands, appRegistryName))
-				?? Microsoft.Win32.Registry.LocalMachine.OpenSubKey(string.Format(shellCommands, appRegistryName))
+				// https://stackoverflow.com/a/909966/4612666
+				Microsoft.Win32.RegistryKey fileKey = null
+					?? Microsoft.Win32.Registry.CurrentUser.OpenSubKey(string.Format(appPaths, appRegistryName))
+					?? Microsoft.Win32.Registry.LocalMachine.OpenSubKey(string.Format(appPaths, appRegistryName))
 
-				?? Microsoft.Win32.Registry.CurrentUser.OpenSubKey(string.Format(shellCommands2, appRegistryName))
-				?? Microsoft.Win32.Registry.LocalMachine.OpenSubKey(string.Format(shellCommands2, appRegistryName))
-				;
+					?? Microsoft.Win32.Registry.CurrentUser.OpenSubKey(string.Format(shellCommands, appRegistryName))
+					?? Microsoft.Win32.Registry.LocalMachine.OpenSubKey(string.Format(shellCommands, appRegistryName))
 
-			if (fileKey != null) {
-				string executablePath = (string)fileKey.GetValue(string.Empty);
-				fileKey.Close();
+					?? Microsoft.Win32.Registry.CurrentUser.OpenSubKey(string.Format(shellCommands2, appRegistryName))
+					?? Microsoft.Win32.Registry.LocalMachine.OpenSubKey(string.Format(shellCommands2, appRegistryName))
+					;
 
-				// Values coming from the shellCommands are in the format:
-				// "C:\Programs\Krita\bin\krita.exe" "%1"
-				if (executablePath.StartsWith('"')) {
-					executablePath = executablePath.Substring(1, executablePath.IndexOf('"', 1) - 1);
-				}
+				if (fileKey != null) {
+					string executablePath = (string)fileKey.GetValue(string.Empty);
+					fileKey.Close();
 
-				if (File.Exists(executablePath)) {
-					System.Diagnostics.Process.Start(executablePath, args);
+					// Values coming from the shellCommands are in the format:
+					// "C:\Programs\Krita\bin\krita.exe" "%1"
+					if (executablePath.StartsWith('"')) {
+						executablePath = executablePath.Substring(1, executablePath.IndexOf('"', 1) - 1);
+					}
 
-					return true;
+					if (File.Exists(executablePath)) {
+						System.Diagnostics.Process.Start(executablePath, args);
+
+						return true;
+					}
 				}
 			}
 
