@@ -188,7 +188,7 @@ namespace DevLocker.Tools.AssetManagement
 
 
 
-			_foldOutSearchCriterias = EditorGUILayout.Foldout(_foldOutSearchCriterias, "Search in:", BOLDED_FOLDOUT_STYLE);
+			_foldOutSearchCriterias = EditorGUILayout.Foldout(_foldOutSearchCriterias, "Search in:", toggleOnLabelClick: true, BOLDED_FOLDOUT_STYLE);
 
 			if (_foldOutSearchCriterias) {
 				EditorGUILayout.BeginVertical(EditorStyles.helpBox);
