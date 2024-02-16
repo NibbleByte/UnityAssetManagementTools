@@ -116,7 +116,6 @@ namespace DevLocker.Tools.AssetManagement
 				} else if (Event.current.type == EventType.DragPerform) {
 
 					var draggedFolders = DragAndDrop.objectReferences
-						.OfType<DefaultAsset>()
 						.Select(AssetDatabase.GetAssetPath)
 						.Where(p => !string.IsNullOrEmpty(p))
 						.Where(p => !folderPaths.Contains(p));
