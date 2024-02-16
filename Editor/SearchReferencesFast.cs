@@ -89,6 +89,12 @@ namespace DevLocker.Tools.AssetManagement
 			MetasOnly
 		}
 
+		private enum ResultsViewMode
+		{
+			ResultsPerSearchEntry,
+			SearchesPerFoundResult,
+		}
+
 		private bool _foldOutSearchCriterias = true;
 		private SearchMetas _searchMetas = SearchMetas.SearchWithMetas;
 		[SerializeField]
@@ -98,7 +104,35 @@ namespace DevLocker.Tools.AssetManagement
 		private string _resultsFoundEntryFilter = "";
 		private SearchResult _results = new SearchResult();
 
+		private ResultsViewMode _resultsViewMode;
+
 		private Vector2 _scrollPos;
+
+		private static readonly string[] _wellKnownBinaryFileExtensions = new string[] {
+			".fbx",
+			".dae",
+			".mb",
+			".ma",
+			".max",
+			".blend",
+			".obj",
+			".3ds",
+			".dxf",
+
+			".psd",
+			".psb",
+			".png",
+			".bmp",
+			".jpg",
+			".tga",
+			".tif",
+			".tif",
+			".iff",
+			".gif",
+			".dds",
+			".exr",
+			".pict",
+		};
 
 
 		private const string TOOL_HELP =
@@ -133,17 +167,20 @@ namespace DevLocker.Tools.AssetManagement
 
 		// Sometimes the bold style gets corrupted and displays just black text, for no good reason.
 		// This forces the style to reload on re-creation.
-		[NonSerialized]
-		private GUIStyle BOLDED_FOLDOUT_STYLE;
-		private GUIContent RESULTS_SEARCHED_FILTER_LABEL = new GUIContent("Searched Filter", "Filter out results by hiding some search entries.");
-		private GUIContent RESULTS_FOUND_FILTER_LABEL = new GUIContent("Found Filter", "Filter out results by hiding some found entries (under each search entry).");
-		private GUIContent REPLACE_PREFABS_ENTRY_BTN = new GUIContent("Replace in scenes", "Replace this searched prefab entry with the specified replacement (on the left) in whichever scene it was found.");
-		private GUIContent REPLACE_PREFABS_ALL_BTN = new GUIContent("Replace all prefabs", "Replace ALL searched prefab entries with the specified replacement (if provided) in whichever scene they were found.");
+		[NonSerialized] private static GUIStyle BOLDED_FOLDOUT_STYLE;
+		[NonSerialized] private static GUIStyle COUNT_LABEL_STYLE;
+		private static GUIContent RESULTS_SEARCHED_FILTER_LABEL = new GUIContent("Searched Filter", "Filter out results by hiding some search entries.");
+		private static GUIContent RESULTS_FOUND_FILTER_LABEL = new GUIContent("Found Filter", "Filter out results by hiding some found entries (under each search entry).");
+		private static GUIContent REPLACE_PREFABS_ENTRY_BTN = new GUIContent("Replace in scenes", "Replace this searched prefab entry with the specified replacement (on the left) in whichever scene it was found.");
+		private static GUIContent REPLACE_PREFABS_ALL_BTN = new GUIContent("Replace all prefabs", "Replace ALL searched prefab entries with the specified replacement (if provided) in whichever scene they were found.");
 
 		private void InitStyles()
 		{
 			BOLDED_FOLDOUT_STYLE = new GUIStyle(EditorStyles.foldout);
 			BOLDED_FOLDOUT_STYLE.fontStyle = FontStyle.Bold;
+
+			COUNT_LABEL_STYLE = new GUIStyle(EditorStyles.boldLabel);
+			COUNT_LABEL_STYLE.alignment = TextAnchor.MiddleRight;
 		}
 
 		void OnGUI()
@@ -386,14 +423,19 @@ namespace DevLocker.Tools.AssetManagement
 						SearchResultData data = _results[searchEntry.Target];
 						if (!data.Found.Contains(foundObj)) {
 							data.Found.Add(foundObj);
-							_results.AddType(foundObj.GetType());
+							_results.TryAddType(foundObj.GetType());
+							_results.AddSearchToResult(foundObj, data.Root);
 						}
 					}
 				}
 			}
 
-			foreach (var pair in _results.Data) {
-				pair.Value.Found.Sort((l, r) => String.Compare(l.name, r.name, StringComparison.Ordinal));
+			foreach (var data in _results.ResultsPerSearch) {
+				data.Found.Sort((l, r) => String.Compare(AssetDatabase.GetAssetPath(l), AssetDatabase.GetAssetPath(r), StringComparison.Ordinal));
+			}
+
+			foreach (var data in _results.SearchesPerResult) {
+				data.Found.Sort((l, r) => String.Compare(AssetDatabase.GetAssetPath(l), AssetDatabase.GetAssetPath(r), StringComparison.Ordinal));
 			}
 
 			EditorUtility.ClearProgressBar();
@@ -426,7 +468,10 @@ namespace DevLocker.Tools.AssetManagement
 				if (searchMetas == SearchMetas.MetasOnly) {
 					buffers.AppendFile(searchFullPath + ".meta");
 				} else {
-					buffers.AppendFile(searchFullPath);
+					// Exclude well-known binary files that we never want to actually read.
+					if (!_wellKnownBinaryFileExtensions.Any(ext => searchFullPath.EndsWith(ext, StringComparison.OrdinalIgnoreCase))) {
+						buffers.AppendFile(searchFullPath);
+					}
 
 					if (searchMetas == SearchMetas.SearchWithMetas) {
 						// Append a line break to reduce possibility of finding strings that start in
@@ -437,6 +482,9 @@ namespace DevLocker.Tools.AssetManagement
 				}
 
 				string contents = buffers.StringBuilder.ToString();
+
+				if (string.IsNullOrWhiteSpace(contents))
+					continue;
 
 				foreach (SearchEntryData searchData in targetEntries) {
 					bool matchFound = ContentMatchesSearch(searchData, contents, searchPath, searchMainAssetOnly);
@@ -578,88 +626,125 @@ namespace DevLocker.Tools.AssetManagement
 		{
 			GUILayout.Label("Results:", EditorStyles.boldLabel);
 
-
 			EditorGUILayout.BeginHorizontal();
 			{
-				EditorGUILayout.LabelField($"References: {_results.Data.Sum(r => r.Value.Found.Count)}");
+				EditorGUILayout.LabelField("Save slots:", GUILayout.Width(EditorGUIUtility.labelWidth - 2f));
+				DrawSaveResultsSlots();
 
-				var index = EditorGUILayout.Popup(0, _results.ResultTypesNames.Prepend("Select By Type").ToArray());
-				if (index > 0) {
-					var selectedType = _results.ResultTypesNames.Skip(index - 1).First();
+				GUILayout.FlexibleSpace();
 
-					Selection.objects = _results.Data
-						.SelectMany(pair => pair.Value.Found)
-						.Where(obj => obj.GetType().Name == selectedType)
-						.ToArray();
-				}
+				GUILayout.Label("View:", GUILayout.ExpandWidth(false));
+				_resultsViewMode = (ResultsViewMode)EditorGUILayout.EnumPopup(_resultsViewMode, GUILayout.ExpandWidth(false));
 			}
 			EditorGUILayout.EndHorizontal();
 
+			EditorGUILayout.BeginHorizontal();
+			{
+				EditorGUILayout.LabelField($"Found: {_results.ResultsPerSearch.Sum(r => r.Found.Count)}");
 
+				GUILayout.FlexibleSpace();
+
+				var index = EditorGUILayout.Popup(0, _results.ResultTypesNames.Prepend("Select Found...").Append("All").ToArray());
+				index--;    // Exclude prepended string.
+
+				if (_results.ResultTypesNames.Count > 0) {
+					if (index == _results.ResultTypesNames.Count) { // Appended "All"
+						Selection.objects = _results.ResultsPerSearch.SelectMany(data => data.Found).Distinct().ToArray();
+
+					} else if (index >= 0) {
+						var selectedType = _results.ResultTypesNames[index];
+
+						Selection.objects = _results.ResultsPerSearch
+							.SelectMany(pair => pair.Found)
+							.Where(obj => obj.GetType().Name == selectedType)
+							.ToArray();
+					}
+				}
+			}
+			EditorGUILayout.EndHorizontal();
 
 			_resultsSearchEntryFilter = EditorGUILayout.TextField(RESULTS_SEARCHED_FILTER_LABEL, _resultsSearchEntryFilter);
 			_resultsFoundEntryFilter = EditorGUILayout.TextField(RESULTS_FOUND_FILTER_LABEL, _resultsFoundEntryFilter);
 
 			EditorGUILayout.BeginHorizontal();
 			{
-				if (GUILayout.Button("Toggle Fold", GUILayout.ExpandWidth(false)) && _results.Data.Count > 0) {
-					var toggledShowDetails = !_results.Data[0].Value.ShowDetails;
-					_results.Data.ForEach(data => data.Value.ShowDetails = toggledShowDetails);
+				if (GUILayout.Button("Toggle Fold", GUILayout.ExpandWidth(false))) {
+					List<SearchResultData> data = _resultsViewMode switch {
+						ResultsViewMode.ResultsPerSearchEntry => data = _results.ResultsPerSearch,
+						ResultsViewMode.SearchesPerFoundResult => data = _results.SearchesPerResult,
+						_ => throw new NotImplementedException(),
+					};
+
+					if (data.Count > 0) {
+						var toggledShowDetails = !data[0].ShowDetails;
+						data.ForEach(data => data.ShowDetails = toggledShowDetails);
+					}
 				}
 
-				if (GUILayout.Button("Select All", GUILayout.ExpandWidth(false)) && _results.Data.Count > 0) {
-					Selection.objects = _results.Data.SelectMany(data => data.Value.Found).Distinct().ToArray();
+				if (_resultsViewMode == ResultsViewMode.ResultsPerSearchEntry) {
+					DrawReplaceAllPrefabs();
 				}
 
-				DrawReplaceAllPrefabs();
-
-				DrawSaveResultsSlots();
+				GUILayout.FlexibleSpace();
 
 				if (ResultProcessors.Count > 0) {
 					string[] processorNames = ResultProcessors.Select(rp => rp.Name).ToArray();
 
-					_selectedResultProcessor = EditorGUILayout.Popup(
-						_selectedResultProcessor,
-						processorNames,
-						GUILayout.Width(150));
+					_selectedResultProcessor = EditorGUILayout.Popup(_selectedResultProcessor, processorNames, GUILayout.Width(150));
 
 					if (GUILayout.Button(EditorGUIUtility.IconContent("PlayButton"), GUILayout.ExpandWidth(false))) {
-							IEnumerable<UnityEngine.Object> results = _results.Data
-								.Where(
-									rd => rd.Value.Root != null &&
-									      (string.IsNullOrEmpty(_resultsSearchEntryFilter) ||
-									       rd.Value.Root.name.IndexOf(_resultsSearchEntryFilter, StringComparison.OrdinalIgnoreCase) !=
-									       -1))
-								.SelectMany(rd => rd.Value.Found)
-								.Where(
-									rd => rd != null &&
-									      (string.IsNullOrEmpty(_resultsFoundEntryFilter) ||
-									       rd.name.IndexOf(_resultsFoundEntryFilter, StringComparison.OrdinalIgnoreCase) != -1));
+						IEnumerable<UnityEngine.Object> results = _results.ResultsPerSearch
+							.Where(
+								rd => rd.Root != null &&
+									  (string.IsNullOrEmpty(_resultsSearchEntryFilter) ||
+									   rd.Root.name.IndexOf(_resultsSearchEntryFilter, StringComparison.OrdinalIgnoreCase) !=
+									   -1))
+							.SelectMany(rd => rd.Found)
+							.Where(
+								rd => rd != null &&
+									  (string.IsNullOrEmpty(_resultsFoundEntryFilter) ||
+									   rd.name.IndexOf(_resultsFoundEntryFilter, StringComparison.OrdinalIgnoreCase) != -1));
 
-							ResultProcessors[_selectedResultProcessor].ProcessResults(results);
+						ResultProcessors[_selectedResultProcessor].ProcessResults(results);
 					}
 				}
 			}
-
 			EditorGUILayout.EndHorizontal();
+
 
 			EditorGUILayout.BeginVertical();
 			_scrollPos = EditorGUILayout.BeginScrollView(_scrollPos, false, false);
 
-			for (int resultIndex = 0; resultIndex < _results.Data.Count; ++resultIndex) {
-				var data = _results.Data[resultIndex].Value;
+			switch (_resultsViewMode) {
+				case ResultsViewMode.ResultsPerSearchEntry: DrawResultsData(_results.ResultsPerSearch, _resultsSearchEntryFilter, _resultsFoundEntryFilter, true); break;
+				case ResultsViewMode.SearchesPerFoundResult: DrawResultsData(_results.SearchesPerResult, _resultsFoundEntryFilter, _resultsSearchEntryFilter, false); break;
+			}
 
-				if (!string.IsNullOrEmpty(_resultsSearchEntryFilter)
-					&& (data.Root == null || data.Root.name.IndexOf(_resultsSearchEntryFilter, StringComparison.OrdinalIgnoreCase) == -1))
+			EditorGUILayout.EndScrollView();
+			EditorGUILayout.EndVertical();
+		}
+
+		private static void DrawResultsData(List<SearchResultData> results, string searchEntryFilter, string foundEntryFilter, bool showReplaceTool)
+		{
+			for (int resultIndex = 0; resultIndex < results.Count; ++resultIndex) {
+				var data = results[resultIndex];
+
+				if (!string.IsNullOrEmpty(searchEntryFilter)
+					&& (data.Root == null || data.Root.name.IndexOf(searchEntryFilter, StringComparison.OrdinalIgnoreCase) == -1))
 					continue;
 
 				EditorGUILayout.BeginHorizontal();
 
 				var foldOutRect = EditorGUILayout.GetControlRect(false, EditorGUIUtility.singleLineHeight, GUILayout.Width(12f));
 				data.ShowDetails = EditorGUI.Foldout(foldOutRect, data.ShowDetails, "");
-				EditorGUILayout.ObjectField(data.Root, data.Root?.GetType(), false);
+				EditorGUILayout.ObjectField(data.Root, data.Root?.GetType() ?? typeof(Object), false);
+
+				var countRect = GUILayoutUtility.GetLastRect();
+				countRect.width -= 22f;	// It's right aligned, so with is overlapping is not a problem.
+				EditorGUI.LabelField(countRect, data.Found.Count.ToString(), COUNT_LABEL_STYLE);
+
 				if (GUILayout.Button(new GUIContent("X", "Remove entry from list"), GUILayout.Width(20.0f), GUILayout.Height(16.0f))) {
-					_results.Data.RemoveAt(resultIndex);
+					results.RemoveAt(resultIndex);
 					--resultIndex;
 				}
 
@@ -672,13 +757,14 @@ namespace DevLocker.Tools.AssetManagement
 					for (int i = 0; i < data.Found.Count; ++i) {
 						var found = data.Found[i];
 
-						if (!string.IsNullOrEmpty(_resultsFoundEntryFilter)
-							&& (found == null || found.name.IndexOf(_resultsFoundEntryFilter, StringComparison.OrdinalIgnoreCase) == -1))
+						if (!string.IsNullOrEmpty(foundEntryFilter)
+							&& (found == null || found.name.IndexOf(foundEntryFilter, StringComparison.OrdinalIgnoreCase) == -1))
 							continue;
 
 						EditorGUILayout.BeginHorizontal();
 
 						EditorGUILayout.ObjectField(found, found?.GetType() ?? typeof(Object), true);
+
 						if (GUILayout.Button(new GUIContent("X", "Remove entry from list"), GUILayout.Width(20.0f), GUILayout.Height(14.0f))) {
 							data.Found.RemoveAt(i);
 							--i;
@@ -690,18 +776,15 @@ namespace DevLocker.Tools.AssetManagement
 					EditorGUI.indentLevel -= 2;
 				}
 
-				DrawReplaceSinglePrefabs(data);
+				if (showReplaceTool) {
+					DrawReplaceSinglePrefabs(data);
+				}
 
 			}
-
-
-			EditorGUILayout.EndScrollView();
-			EditorGUILayout.EndVertical();
 		}
 
 
-
-		private void DrawReplaceSinglePrefabs(SearchResultData data)
+		private static void DrawReplaceSinglePrefabs(SearchResultData data)
 		{
 			bool showReplaceButton = data.ShowDetails
 									 && data.Root is GameObject
@@ -772,7 +855,7 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void DrawReplaceAllPrefabs()
 		{
-			bool enableReplaceButton = _results.Data.Any(pair => pair.Value.Root is GameObject && pair.Value.Found.Any(obj => obj is SceneAsset));
+			bool enableReplaceButton = _results.ResultsPerSearch.Any(pair => pair.Root is GameObject && pair.Found.Any(obj => obj is SceneAsset));
 			EditorGUI.BeginDisabledGroup(!enableReplaceButton);
 			if (GUILayout.Button(REPLACE_PREFABS_ALL_BTN, GUILayout.ExpandWidth(false))) {
 
@@ -858,7 +941,7 @@ namespace DevLocker.Tools.AssetManagement
 			}
 		}
 
-		private void ReplaceSinglePrefabResult(SearchResultData searchResultData, bool reparentChildren, StringBuilder replaceReport)
+		private static void ReplaceSinglePrefabResult(SearchResultData searchResultData, bool reparentChildren, StringBuilder replaceReport)
 		{
 			Debug.Assert(searchResultData.Root);
 
@@ -871,11 +954,10 @@ namespace DevLocker.Tools.AssetManagement
 			ReplacePrefabResultsInScenes(scenes, new List<SearchResultData>() { searchResultData }, reparentChildren, replaceReport);
 		}
 
-		private void ReplaceAllPrefabResults(SearchResult searchResult, bool reparentChildren, StringBuilder replaceReport)
+		private static void ReplaceAllPrefabResults(SearchResult searchResult, bool reparentChildren, StringBuilder replaceReport)
 		{
 			var resultDataToReplace = searchResult
-				.Data
-				.Select(pair => pair.Value)
+				.ResultsPerSearch
 				.Where(data => data.Root != null)
 				.Where(data => data.ReplacePrefab != null)
 				.ToList()
@@ -892,7 +974,7 @@ namespace DevLocker.Tools.AssetManagement
 
 
 		// Replace one prefab in many scenes or many prefabs in many scenes.
-		private void ReplacePrefabResultsInScenes(List<SceneAsset> scenes, List<SearchResultData> resultDataToReplace, bool reparentChildren, StringBuilder replaceReport)
+		private static void ReplacePrefabResultsInScenes(List<SceneAsset> scenes, List<SearchResultData> resultDataToReplace, bool reparentChildren, StringBuilder replaceReport)
 		{
 			for (int i = 0; i < scenes.Count; ++i) {
 				var sceneAsset = scenes[i];
@@ -971,7 +1053,7 @@ namespace DevLocker.Tools.AssetManagement
 
 
 
-		private string GetGameObjectPath(GameObject go)
+		private static string GetGameObjectPath(GameObject go)
 		{
 			var transform = go.transform;
 
@@ -989,7 +1071,7 @@ namespace DevLocker.Tools.AssetManagement
 
 
 
-		private bool ReparentForeignObjects(GameObject root, Transform targetParent, Transform transform, List<GameObject> reparented)
+		private static bool ReparentForeignObjects(GameObject root, Transform targetParent, Transform transform, List<GameObject> reparented)
 		{
 			if (PrefabUtility.GetOutermostPrefabInstanceRoot(transform.gameObject) != root) {
 				transform.parent = targetParent;
@@ -1098,36 +1180,37 @@ namespace DevLocker.Tools.AssetManagement
 			}
 		}
 
-		// NOTE: This data used to look better, but in order to be serialized by Unity (when changing to play mode), some changes had to be made.
 		[Serializable]
 		private class SearchResult
 		{
-			public List<KeyValueResultPair> Data = new List<KeyValueResultPair>();
+			public List<SearchResultData> ResultsPerSearch = new List<SearchResultData>();	// Results per search object
 			public List<string> ResultTypesNames = new List<string>();
+			public List<SearchResultData> SearchesPerResult = new List<SearchResultData>();	// Searches per result object
 
 			public void Reset()
 			{
-				Data.Clear();
+				ResultsPerSearch.Clear();
 				ResultTypesNames.Clear();
+				SearchesPerResult.Clear();
 			}
 
 			public bool TryGetValue(Object key, out SearchResultData data)
 			{
-				var index = Data.FindIndex(p => p.Key == key);
+				var index = ResultsPerSearch.FindIndex(p => p.Root == key);
 				if (index == -1) {
 					data = null;
 					return false;
 				} else {
-					data = Data[index].Value;
+					data = ResultsPerSearch[index];
 					return true;
 				}
 
 			}
 
-			public SearchResultData this[Object key] {
+			public SearchResultData this[Object searchObjectKey] {
 				get {
 					SearchResultData data;
-					if (!TryGetValue(key, out data)) {
+					if (!TryGetValue(searchObjectKey, out data)) {
 						throw new InvalidDataException("Key is missing!");
 					}
 					return data;
@@ -1140,48 +1223,38 @@ namespace DevLocker.Tools.AssetManagement
 					throw new ArgumentNullException("Null key not allowed!");
 				}
 
-				if (Data.Any(p => p.Key == key)) {
+				if (ResultsPerSearch.Any(p => p.Root == key)) {
 					throw new ArgumentException($"Key {key.name} already exists!");
 				}
 
-				Data.Add(new KeyValueResultPair() { Key = key, Value = data });
+				ResultsPerSearch.Add(data);
 			}
 
-			public void AddType(Type type)
+			public void TryAddType(Type type)
 			{
 				if (!ResultTypesNames.Contains(type.Name)) {
 					ResultTypesNames.Add(type.Name);
 				}
 			}
-		}
 
-
-		[Serializable]
-		private struct KeyValueResultPair : ISerializable
-		{
-			public Object Key;
-			public SearchResultData Value;
-
-			#region Serialization
-
-			private KeyValueResultPair(SerializationInfo info, StreamingContext context)
+			public void AddSearchToResult(Object foundObject, Object searchSource)
 			{
-				Key = AssetDatabase.LoadAssetAtPath<Object>(AssetDatabase.GUIDToAssetPath(info.GetString("Key")));
-				Value = (SearchResultData)info.GetValue("Value", typeof(SearchResultData));
-			}
+				foreach(var combinedData in SearchesPerResult) {
+					if (foundObject == combinedData.Root) {
+						combinedData.Found.Add(searchSource);
+						return;
+					}
+				}
 
-
-			public void GetObjectData(SerializationInfo info, StreamingContext context)
-			{
-				info.AddValue("Key", AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(Key)));
-				info.AddValue("Value", Value);
+				SearchesPerResult.Add(new SearchResultData() { Root = foundObject });
+				SearchesPerResult.Last().Found.Add(searchSource);
 			}
-			#endregion
 		}
 
 		[Serializable]
 		private class SearchResultData : ISerializable
 		{
+			// NOTE: This class is re-used for storing and rendering combined results - searches per result object.
 			public Object Root;
 			public List<Object> Found = new List<Object>(10);
 
@@ -1196,25 +1269,25 @@ namespace DevLocker.Tools.AssetManagement
 
 			private SearchResultData(SerializationInfo info, StreamingContext context)
 			{
-				Root = AssetDatabase.LoadAssetAtPath<Object>(AssetDatabase.GUIDToAssetPath(info.GetString("Root")));
-				var foundGuids = (string[])info.GetValue("Found", typeof(string[]));
+				Root = AssetDatabase.LoadAssetAtPath<Object>(AssetDatabase.GUIDToAssetPath(info.GetString(nameof(Root))));
+				var foundGuids = (string[])info.GetValue(nameof(Found), typeof(string[]));
 				Found = foundGuids
 					.Select(AssetDatabase.GUIDToAssetPath)
 					.Select(AssetDatabase.LoadAssetAtPath<Object>)
 					.ToList();
 
-				ShowDetails = info.GetBoolean("ShowDetails");
-				ReplacePrefab = AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GUIDToAssetPath(info.GetString("ReplacePrefab")));
+				ShowDetails = info.GetBoolean(nameof(ShowDetails));
+				ReplacePrefab = AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GUIDToAssetPath(info.GetString(nameof(ReplacePrefab))));
 			}
 
 
 			public void GetObjectData(SerializationInfo info, StreamingContext context)
 			{
-				info.AddValue("Root", AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(Root)));
-				info.AddValue("Found", Found.Select(AssetDatabase.GetAssetPath).Select(AssetDatabase.AssetPathToGUID).ToArray());
+				info.AddValue(nameof(Root), AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(Root)));
+				info.AddValue(nameof(Found), Found.Select(AssetDatabase.GetAssetPath).Select(AssetDatabase.AssetPathToGUID).ToArray());
 
-				info.AddValue("ShowDetails", ShowDetails);
-				info.AddValue("ReplacePrefab", AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(ReplacePrefab)));
+				info.AddValue(nameof(ShowDetails), ShowDetails);
+				info.AddValue(nameof(ReplacePrefab), AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(ReplacePrefab)));
 			}
 			#endregion
 		}
