@@ -65,7 +65,7 @@ namespace DevLocker.Tools.AssetManagement
 				EditorGUILayout.BeginVertical(EditorStyles.helpBox);
 
 				_searchFilter.DrawIncludeExcludeFolders();
-				_searchFilter.DrawTypeFilters();
+				_searchFilter.DrawTypeFilters(position.width);
 
 				EditorGUILayout.EndVertical();
 			}
