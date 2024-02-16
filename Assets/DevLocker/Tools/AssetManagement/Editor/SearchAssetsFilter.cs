@@ -19,6 +19,7 @@ namespace DevLocker.Tools.AssetManagement
 		private class GUISearchTemplate
 		{
 			public string Name;
+			public string Hint;
 			public string SearchFilter;
 			public bool Enable;
 			public int Count;
@@ -40,8 +41,14 @@ namespace DevLocker.Tools.AssetManagement
 			}
 		}
 
+		private bool _includeFoldout = false;
 		private string _includeFolders = "";
+
+		private bool _excludeFoldout = false;
 		private string _excludeFolders = "";
+
+		private static GUIStyle DragDropZoneStyle = null;
+
 		public bool ExcludePackages;
 		public List<string> ExcludePreferences = new List<string>();
 
@@ -49,13 +56,13 @@ namespace DevLocker.Tools.AssetManagement
 		{
 			new GUISearchTemplate("Scenes", "t:Scene"),
 			new GUISearchTemplate("Prefabs", "t:Prefab"),
+			new GUISearchTemplate("Script Obj", "t:ScriptableObject") { Hint = "Scriptable Objects" },
 			new GUISearchTemplate("Models", "t:Model"),
 			new GUISearchTemplate("Materials", "t:Material"),
 			new GUISearchTemplate("Textures", "t:Texture"),
 			new GUISearchTemplate("Animations", "t:Animation"),
 			new GUISearchTemplate("Animators", "t:AnimatorController t:AnimatorOverrideController"),
-			new GUISearchTemplate("Scriptable Objects", "t:ScriptableObject"),
-			new GUISearchTemplate("Physics material", "t:PhysicMaterial"),
+			new GUISearchTemplate("Timelines", "t:TimelineAsset"),
 		};
 
 		public void SetTemplateEnabled(string label, bool enable)
@@ -73,51 +80,98 @@ namespace DevLocker.Tools.AssetManagement
 
 			clone.ExcludePackages = ExcludePackages;
 			clone.ExcludePreferences = new List<string>(ExcludePreferences);
+			clone._includeFoldout = _includeFoldout;
 			clone._includeFolders = _includeFolders;
+			clone._excludeFoldout = _excludeFoldout;
 			clone._excludeFolders = _excludeFolders;
 
 			return clone;
 		}
 
-		public void DrawIncludeExcludeFolders()
+		private static void DrawFoldersFilter(string label, ref bool foldout, ref string foldersFilter, string[] folderPaths)
 		{
-			EditorGUILayout.BeginHorizontal();
+			if (DragDropZoneStyle == null) {
+				DragDropZoneStyle = new GUIStyle(EditorStyles.helpBox);
+				DragDropZoneStyle.alignment = TextAnchor.MiddleCenter;
+				DragDropZoneStyle.wordWrap = false;
+			}
 
-			var draggedFolder = EditorGUILayout.ObjectField("Include folders", null, typeof(DefaultAsset), false, GUILayout.Width(220.0f));
-			if (draggedFolder) {
-				var folder = AssetDatabase.GetAssetPath(draggedFolder);
-				if (string.IsNullOrEmpty(Path.GetExtension(folder))) {
-					_includeFolders += folder + ";";
+			foldout = EditorGUILayout.BeginFoldoutHeaderGroup(foldout, $"{label} ({folderPaths.Length})");
+
+			var dragRect = GUILayoutUtility.GetLastRect();
+			dragRect.x += dragRect.width;
+			//dragRect.width = dragRect.width > 120f * 2 ? 120f : dragRect.width * 0.35f;
+			dragRect.width = Mathf.Min(120f, dragRect.width * 0.4f);
+			dragRect.x -= dragRect.width;
+			dragRect.height = EditorGUIUtility.singleLineHeight;
+			GUI.Label(dragRect, "Drag Folders Here", DragDropZoneStyle);
+
+			if (dragRect.Contains(Event.current.mousePosition)) {
+
+				if (Event.current.type == EventType.DragUpdated) {
+					DragAndDrop.visualMode = DragAndDropVisualMode.Copy;
+
+					Event.current.Use();
+
+				} else if (Event.current.type == EventType.DragPerform) {
+
+					var draggedFolders = DragAndDrop.objectReferences
+						.OfType<DefaultAsset>()
+						.Select(AssetDatabase.GetAssetPath)
+						.Where(p => !string.IsNullOrEmpty(p))
+						.Where(p => !folderPaths.Contains(p));
+					;
+
+					foldersFilter = foldersFilter.TrimEnd() + "\n" + string.Join("\n", draggedFolders);
+					foldersFilter = foldersFilter.Trim();
+
+					Event.current.Use();
 				}
 			}
 
-			_includeFolders = EditorGUILayout.TextField(_includeFolders);
-
-			EditorGUILayout.EndHorizontal();
-
-
-
-			EditorGUILayout.BeginHorizontal();
-
-			draggedFolder = EditorGUILayout.ObjectField("Exclude folders", null, typeof(DefaultAsset), false, GUILayout.Width(220.0f));
-			if (draggedFolder) {
-				var folder = AssetDatabase.GetAssetPath(draggedFolder);
-				if (string.IsNullOrEmpty(Path.GetExtension(folder))) {
-					_excludeFolders += AssetDatabase.GetAssetPath(draggedFolder) + ";";
-				}
+			if (foldout) {
+				EditorGUI.indentLevel++;
+				foldersFilter = EditorGUILayout.TextArea(foldersFilter);
+				EditorGUI.indentLevel--;
 			}
-
-			_excludeFolders = EditorGUILayout.TextField(_excludeFolders);
-
-			EditorGUILayout.EndHorizontal();
+			EditorGUILayout.EndFoldoutHeaderGroup();
 		}
 
-		public void DrawTypeFilters()
+		public void DrawIncludeExcludeFolders()
 		{
-			foreach (var template in _searchTemplates) {
-				EditorGUILayout.BeginHorizontal();
-				template.Enable = EditorGUILayout.Toggle(template.Name, template.Enable, GUILayout.ExpandWidth(false));
-				GUILayout.Label(template.Count.ToString(), GUILayout.ExpandWidth(false));
+			DrawFoldersFilter("Include folders", ref _includeFoldout, ref _includeFolders, GetIncludeFolders());
+			DrawFoldersFilter("Exclude folders", ref _excludeFoldout, ref _excludeFolders, GetExcludeFolders());
+		}
+
+		public void DrawTypeFilters(float totalWidth)
+		{
+			const float filterButtonWidth = 120f;
+			int columnsCount = Mathf.Max(1, (int) (totalWidth / filterButtonWidth));
+
+			for (int i = 0; i < _searchTemplates.Count; i++) {
+				if (i % columnsCount == 0) {
+					EditorGUILayout.BeginHorizontal();
+				}
+
+				GUISearchTemplate template = _searchTemplates[i];
+
+				Color prevBackgroundColor = GUI.backgroundColor;
+				if (template.Enable) {
+					GUI.backgroundColor = Color.green;
+				}
+
+				if (GUILayout.Button(new GUIContent($"{template.Name} ({template.Count})", template.Hint), GUILayout.MaxWidth(filterButtonWidth))) {
+					template.Enable = !template.Enable;
+				}
+
+				GUI.backgroundColor = prevBackgroundColor;
+
+				if (i % columnsCount == columnsCount - 1) {
+					EditorGUILayout.EndHorizontal();
+				}
+			}
+
+			if ((_searchTemplates.Count - 1) % columnsCount != columnsCount - 1) {
 				EditorGUILayout.EndHorizontal();
 			}
 		}
@@ -136,12 +190,12 @@ namespace DevLocker.Tools.AssetManagement
 
 		public string[] GetIncludeFolders()
 		{
-			return _includeFolders.Split(";".ToCharArray(), StringSplitOptions.RemoveEmptyEntries);
+			return _includeFolders.Split(";\n".ToCharArray(), StringSplitOptions.RemoveEmptyEntries);
 		}
 
 		public string[] GetExcludeFolders()
 		{
-			return _excludeFolders.Split(";".ToCharArray(), StringSplitOptions.RemoveEmptyEntries);
+			return _excludeFolders.Split(";\n".ToCharArray(), StringSplitOptions.RemoveEmptyEntries);
 		}
 
 		// NOTE: Copy pasted from ScenesInProject.

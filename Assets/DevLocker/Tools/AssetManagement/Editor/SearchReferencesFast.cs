@@ -202,7 +202,7 @@ namespace DevLocker.Tools.AssetManagement
 				EditorGUILayout.EndHorizontal();
 				EditorGUILayout.Space();
 
-				_searchFilter.DrawTypeFilters();
+				_searchFilter.DrawTypeFilters(position.width);
 
 				EditorGUILayout.EndVertical();
 			}
