@@ -102,7 +102,14 @@ namespace DevLocker.Tools.AssetManagement
 
 		private string _resultsSearchEntryFilter = "";
 		private string _resultsFoundEntryFilter = "";
-		private SearchResult _results = new SearchResult();
+
+		private SearchResult _currentResults => 0 <= _resultsHistoryIndex && _resultsHistoryIndex < _resultsHistory.Count
+			? _resultsHistory[_resultsHistoryIndex]
+			: _resultsHistory.LastOrDefault()
+			;
+
+		private List<SearchResult> _resultsHistory = new List<SearchResult>();
+		private int _resultsHistoryIndex = 0;
 
 		private ResultsViewMode _resultsViewMode;
 
@@ -360,11 +367,11 @@ namespace DevLocker.Tools.AssetManagement
 		{
 			var searchPaths = _searchFilter.GetFilteredPaths().ToArray();
 
-			_results.Reset();
+			AddNewResultsEntry(new SearchResult());
 
 			// This used to be on demand, but having empty search results is more helpful, then having them missing.
 			foreach (var target in targetEntries) {
-				_results.Add(target.Target, new SearchResultData() { Root = target.Target });
+				_currentResults.Add(target.Target, new SearchResultData() { Root = target.Target });
 			}
 
 			var appDataPath = Application.dataPath;
@@ -423,21 +430,21 @@ namespace DevLocker.Tools.AssetManagement
 					}
 
 					if (foundObj != searchEntry.Target) {
-						SearchResultData data = _results[searchEntry.Target];
+						SearchResultData data = _currentResults[searchEntry.Target];
 						if (!data.Found.Contains(foundObj)) {
 							data.Found.Add(foundObj);
-							_results.TryAddType(foundObj.GetType());
-							_results.AddSearchToResult(foundObj, data.Root);
+							_currentResults.TryAddType(foundObj.GetType());
+							_currentResults.AddSearchToResult(foundObj, data.Root);
 						}
 					}
 				}
 			}
 
-			foreach (var data in _results.ResultsPerSearch) {
+			foreach (var data in _currentResults.ResultsPerSearch) {
 				data.Found.Sort((l, r) => String.Compare(AssetDatabase.GetAssetPath(l), AssetDatabase.GetAssetPath(r), StringComparison.Ordinal));
 			}
 
-			foreach (var data in _results.SearchesPerResult) {
+			foreach (var data in _currentResults.SearchesPerResult) {
 				data.Found.Sort((l, r) => String.Compare(AssetDatabase.GetAssetPath(l), AssetDatabase.GetAssetPath(r), StringComparison.Ordinal));
 			}
 
@@ -643,21 +650,31 @@ namespace DevLocker.Tools.AssetManagement
 
 			EditorGUILayout.BeginHorizontal();
 			{
-				EditorGUILayout.LabelField($"Found: {_results.ResultsPerSearch.Sum(r => r.Found.Count)}");
+				EditorGUILayout.LabelField($"Found: {_currentResults?.ResultsPerSearch.Sum(r => r.Found.Count) ?? 0}");
 
 				GUILayout.FlexibleSpace();
 
-				var index = EditorGUILayout.Popup(0, _results.ResultTypesNames.Prepend("Select Found...").Append("All").ToArray());
-				index--;    // Exclude prepended string.
+				var selectList = new List<string>();
+				selectList.Add("Select From Results...");
+				selectList.AddRange(_currentResults?.ResultTypesNames.Select(typeName => $"Found {typeName} Assets") ?? Enumerable.Empty<string>());
+				selectList.Add("All Found");
+				selectList.Add("Initial Searched Assets");
 
-				if (_results.ResultTypesNames.Count > 0) {
-					if (index == _results.ResultTypesNames.Count) { // Appended "All"
-						Selection.objects = _results.ResultsPerSearch.SelectMany(data => data.Found).Distinct().ToArray();
+				var index = EditorGUILayout.Popup(0, selectList.ToArray());
 
-					} else if (index >= 0) {
-						var selectedType = _results.ResultTypesNames[index];
+				if (_currentResults != null) {
 
-						Selection.objects = _results.ResultsPerSearch
+					if (index == selectList.Count - 1) { // Appended "Initial Searched Assets"
+						Selection.objects = _currentResults.ResultsPerSearch.Select(data => data.Root).ToArray();
+
+					} else if (index == selectList.Count - 2) { // Appended "All"
+						Selection.objects = _currentResults.ResultsPerSearch.SelectMany(data => data.Found).Distinct().ToArray();
+
+					} else if (_currentResults.ResultTypesNames.Count > 0 && index >= 1) {
+						index--;    // Exclude prepended string.
+						var selectedType = _currentResults.ResultTypesNames[index];
+
+						Selection.objects = _currentResults.ResultsPerSearch
 							.SelectMany(pair => pair.Found)
 							.Where(obj => obj.GetType().Name == selectedType)
 							.ToArray();
@@ -671,10 +688,22 @@ namespace DevLocker.Tools.AssetManagement
 
 			EditorGUILayout.BeginHorizontal();
 			{
-				if (GUILayout.Button("Toggle Fold", GUILayout.ExpandWidth(false))) {
+				EditorGUI.BeginDisabledGroup(_resultsHistoryIndex <= 0);
+				if (GUILayout.Button("<", GUILayout.MaxWidth(24f))) {
+					SelectPreviousResults();
+				}
+				EditorGUI.EndDisabledGroup();
+
+				EditorGUI.BeginDisabledGroup(_resultsHistoryIndex >= _resultsHistory.Count - 1);
+				if (GUILayout.Button(">", GUILayout.MaxWidth(24f))) {
+					SelectNextResults();
+				}
+				EditorGUI.EndDisabledGroup();
+
+				if (GUILayout.Button("Toggle Fold", GUILayout.ExpandWidth(false)) && _currentResults != null) {
 					List<SearchResultData> data = _resultsViewMode switch {
-						ResultsViewMode.ResultsPerSearchEntry => data = _results.ResultsPerSearch,
-						ResultsViewMode.SearchesPerFoundResult => data = _results.SearchesPerResult,
+						ResultsViewMode.ResultsPerSearchEntry => data = _currentResults.ResultsPerSearch,
+						ResultsViewMode.SearchesPerFoundResult => data = _currentResults.SearchesPerResult,
 						_ => throw new NotImplementedException(),
 					};
 
@@ -695,8 +724,8 @@ namespace DevLocker.Tools.AssetManagement
 
 					_selectedResultProcessor = EditorGUILayout.Popup(_selectedResultProcessor, processorNames, GUILayout.Width(150));
 
-					if (GUILayout.Button(EditorGUIUtility.IconContent("PlayButton"), GUILayout.ExpandWidth(false))) {
-						IEnumerable<UnityEngine.Object> results = _results.ResultsPerSearch
+					if (GUILayout.Button(EditorGUIUtility.IconContent("PlayButton"), GUILayout.ExpandWidth(false)) && _currentResults != null) {
+						IEnumerable<UnityEngine.Object> results = _currentResults.ResultsPerSearch
 							.Where(
 								rd => rd.Root != null &&
 									  (string.IsNullOrEmpty(_resultsSearchEntryFilter) ||
@@ -718,9 +747,11 @@ namespace DevLocker.Tools.AssetManagement
 			EditorGUILayout.BeginVertical();
 			_scrollPos = EditorGUILayout.BeginScrollView(_scrollPos, false, false);
 
-			switch (_resultsViewMode) {
-				case ResultsViewMode.ResultsPerSearchEntry: DrawResultsData(_results.ResultsPerSearch, _resultsSearchEntryFilter, _resultsFoundEntryFilter, true); break;
-				case ResultsViewMode.SearchesPerFoundResult: DrawResultsData(_results.SearchesPerResult, _resultsFoundEntryFilter, _resultsSearchEntryFilter, false); break;
+			if (_currentResults != null) {
+				switch (_resultsViewMode) {
+					case ResultsViewMode.ResultsPerSearchEntry: DrawResultsData(_currentResults.ResultsPerSearch, _resultsSearchEntryFilter, _resultsFoundEntryFilter, true); break;
+					case ResultsViewMode.SearchesPerFoundResult: DrawResultsData(_currentResults.SearchesPerResult, _resultsFoundEntryFilter, _resultsSearchEntryFilter, false); break;
+				}
 			}
 
 			EditorGUILayout.EndScrollView();
@@ -858,7 +889,7 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void DrawReplaceAllPrefabs()
 		{
-			bool enableReplaceButton = _results.ResultsPerSearch.Any(pair => pair.Root is GameObject && pair.Found.Any(obj => obj is SceneAsset));
+			bool enableReplaceButton = _currentResults != null && _currentResults.ResultsPerSearch.Any(pair => pair.Root is GameObject && pair.Found.Any(obj => obj is SceneAsset));
 			EditorGUI.BeginDisabledGroup(!enableReplaceButton);
 			if (GUILayout.Button(REPLACE_PREFABS_ALL_BTN, GUILayout.ExpandWidth(false))) {
 
@@ -882,7 +913,7 @@ namespace DevLocker.Tools.AssetManagement
 
 				StringBuilder replaceReport = new StringBuilder(300);
 				replaceReport.AppendLine($"Mass replace started! Reparent: {option == 0}");
-				ReplaceAllPrefabResults(_results, option == 0, replaceReport);
+				ReplaceAllPrefabResults(_currentResults, option == 0, replaceReport);
 
 				Debug.Log($"Replace report:\n" + replaceReport);
 			}
@@ -914,7 +945,7 @@ namespace DevLocker.Tools.AssetManagement
 							var serializer = new BinaryFormatter();
 
 							using (FileStream fileStream = File.Open(GetSaveSlothPath(i), FileMode.OpenOrCreate)) {
-								serializer.Serialize(fileStream, _results);
+								serializer.Serialize(fileStream, _currentResults);
 							}
 
 							break;
@@ -930,7 +961,7 @@ namespace DevLocker.Tools.AssetManagement
 							using (FileStream fileStream = File.Open(GetSaveSlothPath(i), FileMode.Open)) {
 
 								try {
-									_results = (SearchResult)serializer.Deserialize(fileStream);
+									AddNewResultsEntry((SearchResult)serializer.Deserialize(fileStream));
 								}
 								catch (Exception ex) {
 									Debug.LogException(ex);
@@ -1054,7 +1085,28 @@ namespace DevLocker.Tools.AssetManagement
 			EditorUtility.DisplayDialog("Complete", "Prefabs were replaced. Please check the replace report in the logs.", "I will!");
 		}
 
+		private void AddNewResultsEntry(SearchResult results)
+		{
+			_resultsHistory.Add(results);
+			if (_resultsHistory.Count > 30) {
+				_resultsHistory.RemoveAt(0);
+			}
+			_resultsHistoryIndex = _resultsHistory.Count - 1;
+		}
 
+		private void SelectPreviousResults()
+		{
+			if (_resultsHistoryIndex >= 0) {
+				_resultsHistoryIndex--;
+			}
+		}
+
+		private void SelectNextResults()
+		{
+			if (_resultsHistoryIndex < _resultsHistory.Count - 1) {
+				_resultsHistoryIndex++;
+			}
+		}
 
 		private static string GetGameObjectPath(GameObject go)
 		{
