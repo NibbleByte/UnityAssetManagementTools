@@ -20,24 +20,59 @@ namespace DevLocker.Tools.AssetManagement
 		{
 			public string Name;
 			public string Hint;
-			public string SearchFilter;
-			public bool Enable;
+			public string Filter;
 			public int Count;
 
 			public GUISearchTemplate(string name, string searchFilter)
 			{
 				Name = name;
-				SearchFilter = searchFilter;
-				Enable = false;
+				Filter = searchFilter;
 			}
 
 			public GUISearchTemplate Clone()
 			{
-				var clone = new GUISearchTemplate(Name, SearchFilter);
+				var clone = new GUISearchTemplate(Name, Filter);
+				clone.Hint = Hint;
 				clone.Count = Count;
-				clone.Enable = Enable;
 
 				return clone;
+			}
+
+			public bool IsEnabled(string searchFilter)
+			{
+				int index = 0;
+
+				while (true) {
+					index = searchFilter.IndexOf(Filter, index);
+					if (index == -1)
+						return false;
+
+					// Check for spaces around the filter or it wouldn't count.
+					if (index != 0 && searchFilter[index - 1] != ' ') {
+						index += Filter.Length - 1;
+						continue;
+					}
+
+					if (index + Filter.Length < searchFilter.Length && searchFilter[index + Filter.Length] != ' ') {
+						index += Filter.Length - 1;
+						continue;
+					}
+
+					return true;
+				}
+			}
+
+			public void ApplyToSearchFilter(ref string searchFilter, bool enable)
+			{
+				if (enable) {
+					searchFilter = searchFilter.Trim();
+
+					if (!IsEnabled(searchFilter)) {
+						searchFilter = string.IsNullOrEmpty(searchFilter) ? Filter : $"{searchFilter} {Filter}";
+					}
+				} else {
+					searchFilter = searchFilter.Replace(" " + Filter, "").Replace(Filter, "").Trim();
+				}
 			}
 		}
 
@@ -52,6 +87,8 @@ namespace DevLocker.Tools.AssetManagement
 		public bool ExcludePackages;
 		public List<string> ExcludePreferences = new List<string>();
 
+		private string _searchFilter = "";
+		public string SearchFilter => _searchFilter;
 		private List<GUISearchTemplate> _searchTemplates = new List<GUISearchTemplate>()
 		{
 			new GUISearchTemplate("Scenes", "t:Scene"),
@@ -68,15 +105,19 @@ namespace DevLocker.Tools.AssetManagement
 		public void SetTemplateEnabled(string label, bool enable)
 		{
 			var template =_searchTemplates.First(t => t.Name == label);
-			template.Enable = enable;
+			template.ApplyToSearchFilter(ref _searchFilter, enable);
+
+			RefreshSearchTemplatesOrder();
 		}
 
 		public SearchAssetsFilter Clone()
 		{
 			var clone = new SearchAssetsFilter();
 
+			clone._searchFilter = _searchFilter;
 			clone._searchTemplates.Clear();
 			clone._searchTemplates.AddRange(_searchTemplates.Select(t => t.Clone()));
+			clone.RefreshSearchTemplatesOrder(); // Just in case.
 
 			clone.ExcludePackages = ExcludePackages;
 			clone.ExcludePreferences = new List<string>(ExcludePreferences);
@@ -144,6 +185,8 @@ namespace DevLocker.Tools.AssetManagement
 
 		public void DrawTypeFilters(float totalWidth)
 		{
+			_searchFilter = EditorGUILayout.TextField(new GUIContent("Search Filter", "What assets to search for. Same as searching in the project window.\nUse type filters below or type in your own criteria."), _searchFilter);
+
 			const float filterButtonWidth = 120f;
 			int columnsCount = Mathf.Max(1, (int) (totalWidth / filterButtonWidth));
 
@@ -153,14 +196,17 @@ namespace DevLocker.Tools.AssetManagement
 				}
 
 				GUISearchTemplate template = _searchTemplates[i];
+				bool templateEnabled = template.IsEnabled(_searchFilter);
 
 				Color prevBackgroundColor = GUI.backgroundColor;
-				if (template.Enable) {
+				if (templateEnabled) {
 					GUI.backgroundColor = Color.green;
 				}
 
 				if (GUILayout.Button(new GUIContent($"{template.Name} ({template.Count})", template.Hint), GUILayout.MaxWidth(filterButtonWidth))) {
-					template.Enable = !template.Enable;
+					template.ApplyToSearchFilter(ref _searchFilter, !templateEnabled);
+					RefreshSearchTemplatesOrder();
+					GUI.FocusControl("");
 				}
 
 				GUI.backgroundColor = prevBackgroundColor;
@@ -173,18 +219,6 @@ namespace DevLocker.Tools.AssetManagement
 			if ((_searchTemplates.Count - 1) % columnsCount != columnsCount - 1) {
 				EditorGUILayout.EndHorizontal();
 			}
-		}
-
-		public string GetTypesFilter()
-		{
-			string typeFilter = "";
-			foreach (var template in _searchTemplates) {
-				if (template.Enable) {
-					typeFilter += template.SearchFilter + " ";
-				}
-			}
-
-			return typeFilter;
 		}
 
 		public string[] GetIncludeFolders()
@@ -227,12 +261,30 @@ namespace DevLocker.Tools.AssetManagement
 			return ShouldExclude(ExcludePreferences, path);
 		}
 
+		private void RefreshSearchTemplatesOrder()
+		{
+			var enabledTemplates = new List<GUISearchTemplate>();
+
+			foreach(var template in _searchTemplates) {
+				if (template.IsEnabled(_searchFilter)) {
+					enabledTemplates.Add(template);
+					template.ApplyToSearchFilter(ref _searchFilter, false);
+				}
+			}
+
+			_searchFilter = _searchFilter.Trim();
+
+			foreach(var template in enabledTemplates) {
+				template.ApplyToSearchFilter(ref _searchFilter, true);
+			}
+		}
+
 		public IEnumerable<string> GetFilteredPaths()
 		{
 			var includeFolders = GetIncludeFolders();
 			var excludeFolders = GetExcludeFolders();
 
-			var query = AssetDatabase.FindAssets(GetTypesFilter().Trim())
+			var query = AssetDatabase.FindAssets(_searchFilter.Trim())
 				.Select(AssetDatabase.GUIDToAssetPath)
 				.Distinct() // Some assets might have sub-assets resulting in having the same path.
 				.Where(path => includeFolders.Length == 0 || includeFolders.Any(includePath => path.StartsWith(includePath.Trim())))
@@ -252,7 +304,7 @@ namespace DevLocker.Tools.AssetManagement
 		public void RefreshCounters()
 		{
 			foreach (var template in _searchTemplates) {
-				template.Count = AssetDatabase.FindAssets(template.SearchFilter).Length;
+				template.Count = AssetDatabase.FindAssets(template.Filter).Length;
 			}
 		}
 	}
