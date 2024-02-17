@@ -139,8 +139,7 @@ namespace DevLocker.Tools.AssetManagement
 				"Search works only when assets are set in text mode.\n" +
 				"It takes the GUIDs (from the meta files) and searches them in the assets as plain text, skipping any actual loading.\n" +
 				"Useful when searching in scenes.\n\n" +
-				"NOTE: Prefabs in scenes, that contain references to assets, do not store those references in the scene itself and won't be found, unless they are overridden.\n" +
-				"NOTE2: Searching for foreign assets (example: meshes/materials/clips in fbx) is supported."
+				"NOTE: Prefabs in scenes, that contain references to assets, do not store those references in the scene itself and won't be found, unless they are overridden.\n"
 			;
 
 		private SerializedObject m_SerializedObject;
@@ -245,6 +244,8 @@ namespace DevLocker.Tools.AssetManagement
 			}
 
 			EditorGUILayout.BeginHorizontal();
+
+			EditorGUI.BeginDisabledGroup(string.IsNullOrWhiteSpace(_searchFilter.SearchFilter));
 			if (GUILayout.Button("Search In Project")) {
 
 				_resultsSearchEntryFilter = string.Empty;
@@ -270,6 +271,8 @@ namespace DevLocker.Tools.AssetManagement
 				}
 
 			}
+
+			EditorGUI.EndDisabledGroup();
 
 			if (GUILayout.Button("P", GUILayout.Width(20.0f))) {
 				m_ShowPreferences = true;
