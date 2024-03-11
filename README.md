@@ -34,7 +34,7 @@ openupm add devlocker.tools.assetmanagement
 All these tools can be found in the menus: "Tools/Asset Management/..."
 
 ## Scenes In Project
-<img src="Docs/Screenshots/ScenesInProject.png" align="right">
+<img src="https://github.com/NibbleByte/UnityAssetManagementTools/blob/master/Docs/Screenshots/ScenesInProject.png" align="right">
 List of all available scenes in the project for quick access.<br />
 Useful when you have to switch often between scenes in larger projects.
 
@@ -53,7 +53,7 @@ Useful when you have to switch often between scenes in larger projects.
   * Project preferences to be shared with your team stored in the ProjectSettings folder.
 
 ## MultiRename Tool
-<img src="Docs/Screenshots/MultiRenameTool.png" align="right">
+<img src="https://github.com/NibbleByte/UnityAssetManagementTools/blob/master/Docs/Screenshots/MultiRenameTool.png" align="right">
 Mass search and rename assets or scene game objects.
 
 ### Features:
@@ -77,10 +77,10 @@ Searches the project for duplicate assets (compares files by name only).
 * Textures are displayed as images in a single row for easy comparison.
 * Can specify what asset types to search for.
 
-![SearchDuplicateAssets](Docs/Screenshots/SearchDuplicateAssets.png)
+![SearchDuplicateAssets](https://github.com/NibbleByte/UnityAssetManagementTools/blob/master/Docs/Screenshots/SearchDuplicateAssets.png)
 
 ## Search Prefabs Components
-<img src="Docs/Screenshots/SearchPrefabsComponents.png" align="right">
+<img src="https://github.com/NibbleByte/UnityAssetManagementTools/blob/master/Docs/Screenshots/SearchPrefabsComponents.png" align="right">
 Search selected or all prefabs in the project if they have the specified components attached.
 
 ### Features:
@@ -115,22 +115,21 @@ This is very fast for searching prefabs references in scenes as it wouldn't load
 
 ### Example:
 In the screenshot below:
-* "Bullet" prefab is referenced by the "TankShoot" animation.
+* "Sides-Graystone" material is referenced by multiple scenes.
 * The "Car" prefab is referenced by 3 scenes.
-* The "Tank" prefab is referenced by another 3 scenes.
-* "Car" and "Tank" prefab can be replaced or removed in the found scenes with another using the last field.
-![SearchReferencesFast](Docs/Screenshots/SearchReferencesFast.png)
+* "TowerLevelPlaceholder" prefab can be replaced or removed in the found scenes with another using the last field.
+![SearchReferencesFast](https://github.com/NibbleByte/UnityAssetManagementTools/blob/master/Docs/Screenshots/SearchReferencesFast.png)
 
 ## Find References In Scene
 Search references to specified GameObject or **component** in the current scene (or prefab edit stage).
 Open by right click on GameObject and selecting "Find References In Scene". You can additionally drag in any **component** as well.
-![FindReferencesInSceneWindow](Docs/Screenshots/FindReferencesInSceneWindow.png)
+![FindReferencesInSceneWindow](https://github.com/NibbleByte/UnityAssetManagementTools/blob/master/Docs/Screenshots/FindReferencesInSceneWindow.png)
 
 ## Asset Context Menus
 Useful context menus:
 * Copy selected guids or asset paths
 * Edit selected assets with third-party app that is already installed on the machine
 
-![AssetContextMenus-Copy](Docs/Screenshots/AssetContextMenus-Copy.png)
+![AssetContextMenus-Copy](https://github.com/NibbleByte/UnityAssetManagementTools/blob/master/Docs/Screenshots/AssetContextMenus-Copy.png)
 
-![AssetContextMenus-EditWith](Docs/Screenshots/AssetContextMenus-EditWith.png)
+![AssetContextMenus-EditWith](https://github.com/NibbleByte/UnityAssetManagementTools/blob/master/Docs/Screenshots/AssetContextMenus-EditWith.png)
