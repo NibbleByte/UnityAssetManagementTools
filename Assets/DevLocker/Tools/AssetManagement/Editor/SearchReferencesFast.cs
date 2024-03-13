@@ -91,8 +91,8 @@ namespace DevLocker.Tools.AssetManagement
 
 		private enum ResultsViewMode
 		{
-			ResultsPerSearchEntry,
-			SearchesPerFoundResult,
+			SearchResults,
+			CombinedFoundList,
 		}
 
 		private bool _foldOutSearchCriterias = true;
@@ -175,6 +175,11 @@ namespace DevLocker.Tools.AssetManagement
 		// This forces the style to reload on re-creation.
 		[NonSerialized] private static GUIStyle BOLDED_FOLDOUT_STYLE;
 		[NonSerialized] private static GUIStyle COUNT_LABEL_STYLE;
+		[NonSerialized] private GUIStyle UrlStyle;
+		[NonSerialized] private GUIStyle SearchedUrlStyle;
+		[NonSerialized] private GUIStyle FoundedUrlStyle;
+		[NonSerialized] private static GUIStyle ResultIconStyle;
+		[NonSerialized] private static GUIStyle DarkerRowStyle;
 		private static GUIContent RESULTS_SEARCHED_FILTER_LABEL = new GUIContent("Searched Filter", "Filter out results by hiding some search entries.");
 		private static GUIContent RESULTS_FOUND_FILTER_LABEL = new GUIContent("Found Filter", "Filter out results by hiding some found entries (under each search entry).");
 		private static GUIContent REPLACE_PREFABS_ENTRY_BTN = new GUIContent("Replace in scenes", "Replace this searched prefab entry with the specified replacement (on the left) in whichever scene it was found.");
@@ -187,6 +192,29 @@ namespace DevLocker.Tools.AssetManagement
 
 			COUNT_LABEL_STYLE = new GUIStyle(EditorStyles.boldLabel);
 			COUNT_LABEL_STYLE.alignment = TextAnchor.MiddleRight;
+
+			UrlStyle = new GUIStyle(GUI.skin.label);
+			UrlStyle.normal.textColor = EditorGUIUtility.isProSkin ? new Color(1.00f, 0.65f, 0.00f) : Color.blue;
+			UrlStyle.hover.textColor = UrlStyle.normal.textColor;
+			UrlStyle.active.textColor = Color.red;
+			UrlStyle.wordWrap = false;
+
+			SearchedUrlStyle = new GUIStyle(UrlStyle);
+			SearchedUrlStyle.normal.textColor = EditorGUIUtility.isProSkin ? new Color(1.00f, 0.65f, 0.00f) : new Color(0.4f, 0.3f, 0.0f);
+			SearchedUrlStyle.hover.textColor = SearchedUrlStyle.normal.textColor;
+
+			FoundedUrlStyle = new GUIStyle(UrlStyle);
+			FoundedUrlStyle.normal.textColor = EditorGUIUtility.isProSkin ? new Color(0.522f, 0.769f, 0.78f) : new Color(0.1f, 0.36f, 0.14f);
+			FoundedUrlStyle.hover.textColor = FoundedUrlStyle.normal.textColor;
+			FoundedUrlStyle.margin.left = 0;
+			FoundedUrlStyle.padding.left = 0;
+
+			ResultIconStyle = new GUIStyle(EditorStyles.label);
+
+			DarkerRowStyle = new GUIStyle(GUI.skin.box);
+			DarkerRowStyle.padding = new RectOffset();
+			DarkerRowStyle.margin = new RectOffset();
+			DarkerRowStyle.border = new RectOffset();
 		}
 
 		void OnGUI()
@@ -446,6 +474,7 @@ namespace DevLocker.Tools.AssetManagement
 
 			foreach (var data in _currentResults.SearchesPerResult) {
 				data.Found.Sort((l, r) => String.Compare(AssetDatabase.GetAssetPath(l), AssetDatabase.GetAssetPath(r), StringComparison.Ordinal));
+				data.ShowDetails = false;
 			}
 
 			EditorUtility.ClearProgressBar();
@@ -702,8 +731,8 @@ namespace DevLocker.Tools.AssetManagement
 
 				if (GUILayout.Button("Toggle Fold", GUILayout.ExpandWidth(false)) && _currentResults != null) {
 					List<SearchResultData> data = _resultsViewMode switch {
-						ResultsViewMode.ResultsPerSearchEntry => data = _currentResults.ResultsPerSearch,
-						ResultsViewMode.SearchesPerFoundResult => data = _currentResults.SearchesPerResult,
+						ResultsViewMode.SearchResults => data = _currentResults.ResultsPerSearch,
+						ResultsViewMode.CombinedFoundList => data = _currentResults.SearchesPerResult,
 						_ => throw new NotImplementedException(),
 					};
 
@@ -713,7 +742,7 @@ namespace DevLocker.Tools.AssetManagement
 					}
 				}
 
-				if (_resultsViewMode == ResultsViewMode.ResultsPerSearchEntry) {
+				if (_resultsViewMode == ResultsViewMode.SearchResults) {
 					DrawReplaceAllPrefabs();
 				}
 
@@ -749,8 +778,8 @@ namespace DevLocker.Tools.AssetManagement
 
 			if (_currentResults != null) {
 				switch (_resultsViewMode) {
-					case ResultsViewMode.ResultsPerSearchEntry: DrawResultsData(_currentResults.ResultsPerSearch, _resultsSearchEntryFilter, _resultsFoundEntryFilter, true); break;
-					case ResultsViewMode.SearchesPerFoundResult: DrawResultsData(_currentResults.SearchesPerResult, _resultsFoundEntryFilter, _resultsSearchEntryFilter, false); break;
+					case ResultsViewMode.SearchResults: DrawResultsData(_currentResults.ResultsPerSearch, _resultsSearchEntryFilter, _resultsFoundEntryFilter, SearchedUrlStyle, FoundedUrlStyle, showRootIcons: false, showReplaceTool: true); break;
+					case ResultsViewMode.CombinedFoundList: DrawResultsData(_currentResults.SearchesPerResult, _resultsFoundEntryFilter, _resultsSearchEntryFilter, FoundedUrlStyle, SearchedUrlStyle, showRootIcons: true, showReplaceTool: false); break;
 				}
 			}
 
@@ -758,7 +787,7 @@ namespace DevLocker.Tools.AssetManagement
 			EditorGUILayout.EndVertical();
 		}
 
-		private static void DrawResultsData(List<SearchResultData> results, string searchEntryFilter, string foundEntryFilter, bool showReplaceTool)
+		private static void DrawResultsData(List<SearchResultData> results, string searchEntryFilter, string foundEntryFilter, GUIStyle rootsStyle, GUIStyle foundStyle, bool showRootIcons, bool showReplaceTool)
 		{
 			for (int resultIndex = 0; resultIndex < results.Count; ++resultIndex) {
 				var data = results[resultIndex];
@@ -771,11 +800,26 @@ namespace DevLocker.Tools.AssetManagement
 
 				var foldOutRect = EditorGUILayout.GetControlRect(false, EditorGUIUtility.singleLineHeight, GUILayout.Width(12f));
 				data.ShowDetails = EditorGUI.Foldout(foldOutRect, data.ShowDetails, "");
-				EditorGUILayout.ObjectField(data.Root, data.Root?.GetType() ?? typeof(Object), false);
 
-				var countRect = GUILayoutUtility.GetLastRect();
-				countRect.width -= 22f;	// It's right aligned, so with is overlapping is not a problem.
-				EditorGUI.LabelField(countRect, data.Found.Count.ToString(), COUNT_LABEL_STYLE);
+				string searchPath = AssetDatabase.GetAssetPath(data.Root);
+				if (string.IsNullOrEmpty(searchPath)) {
+					searchPath = "-- Missing --";
+				}
+
+				if (showRootIcons) {
+					Texture icon = AssetDatabase.GetCachedIcon(searchPath);
+					if (GUILayout.Button(new GUIContent(icon), ResultIconStyle, GUILayout.Width(EditorGUIUtility.singleLineHeight), GUILayout.Height(EditorGUIUtility.singleLineHeight))) {
+						EditorGUIUtility.PingObject(data.Root);
+					}
+					EditorGUIUtility.AddCursorRect(GUILayoutUtility.GetLastRect(), MouseCursor.Link);
+				}
+
+				if (GUILayout.Button(searchPath, rootsStyle, GUILayout.ExpandWidth(true)) && data.Root) {
+					EditorGUIUtility.PingObject(data.Root);
+				}
+				EditorGUIUtility.AddCursorRect(GUILayoutUtility.GetLastRect(), MouseCursor.Link);
+
+				EditorGUILayout.LabelField(data.Found.Count.ToString(), COUNT_LABEL_STYLE, GUILayout.MinWidth(20f));
 
 				if (GUILayout.Button(new GUIContent("X", "Remove entry from list"), GUILayout.Width(20.0f), GUILayout.Height(16.0f))) {
 					results.RemoveAt(resultIndex);
@@ -786,8 +830,6 @@ namespace DevLocker.Tools.AssetManagement
 
 
 				if (data.ShowDetails) {
-					EditorGUI.indentLevel += 2;
-
 					for (int i = 0; i < data.Found.Count; ++i) {
 						var found = data.Found[i];
 
@@ -795,9 +837,31 @@ namespace DevLocker.Tools.AssetManagement
 							&& (found == null || found.name.IndexOf(foundEntryFilter, StringComparison.OrdinalIgnoreCase) == -1))
 							continue;
 
-						EditorGUILayout.BeginHorizontal();
+						if ((i + 1) % 2 == 0) {
+							EditorGUILayout.BeginHorizontal(DarkerRowStyle);
+						} else {
+							EditorGUILayout.BeginHorizontal();
+						}
 
-						EditorGUILayout.ObjectField(found, found?.GetType() ?? typeof(Object), true);
+						GUILayout.Space(18f);
+
+						string foundPath = AssetDatabase.GetAssetPath(found);
+						if (string.IsNullOrEmpty(foundPath)) {
+							foundPath = "-- Missing --";
+						}
+
+						if (!showRootIcons) {
+							Texture icon = AssetDatabase.GetCachedIcon(foundPath);
+							if (GUILayout.Button(new GUIContent(icon), ResultIconStyle, GUILayout.Width(EditorGUIUtility.singleLineHeight), GUILayout.Height(EditorGUIUtility.singleLineHeight))) {
+								EditorGUIUtility.PingObject(found);
+							}
+							EditorGUIUtility.AddCursorRect(GUILayoutUtility.GetLastRect(), MouseCursor.Link);
+						}
+
+						if (GUILayout.Button(foundPath, foundStyle, GUILayout.ExpandWidth(true)) && found) {
+							EditorGUIUtility.PingObject(found);
+						}
+						EditorGUIUtility.AddCursorRect(GUILayoutUtility.GetLastRect(), MouseCursor.Link);
 
 						if (GUILayout.Button(new GUIContent("X", "Remove entry from list"), GUILayout.Width(20.0f), GUILayout.Height(14.0f))) {
 							data.Found.RemoveAt(i);
@@ -806,8 +870,6 @@ namespace DevLocker.Tools.AssetManagement
 
 						EditorGUILayout.EndHorizontal();
 					}
-
-					EditorGUI.indentLevel -= 2;
 				}
 
 				if (showReplaceTool) {
@@ -830,7 +892,7 @@ namespace DevLocker.Tools.AssetManagement
 				GUILayout.Space(8);
 
 				EditorGUILayout.BeginHorizontal();
-				GUILayout.Space((EditorGUI.indentLevel + 2) * 16);  // Magic...
+				GUILayout.Space(16 + 2);
 
 				data.ReplacePrefab = (GameObject)EditorGUILayout.ObjectField(data.ReplacePrefab, typeof(GameObject), false);
 				EditorGUILayout.LabelField(">>", GUILayout.Width(22f));
