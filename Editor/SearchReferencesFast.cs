@@ -182,9 +182,9 @@ namespace DevLocker.Tools.AssetManagement
 		// This forces the style to reload on re-creation.
 		[NonSerialized] private static GUIStyle BOLDED_FOLDOUT_STYLE;
 		[NonSerialized] private static GUIStyle COUNT_LABEL_STYLE;
-		[NonSerialized] private GUIStyle UrlStyle;
-		[NonSerialized] private GUIStyle SearchedUrlStyle;
-		[NonSerialized] private GUIStyle FoundedUrlStyle;
+		[NonSerialized] private static GUIStyle UrlStyle;
+		[NonSerialized] private static GUIStyle SearchedUrlStyle;
+		[NonSerialized] private static GUIStyle FoundedUrlStyle;
 		[NonSerialized] private static GUIStyle ResultIconStyle;
 		[NonSerialized] private static GUIStyle DarkerRowStyle;
 		private static GUIContent RESULTS_SEARCHED_FILTER_LABEL = new GUIContent("Searched Filter", "Filter out results by hiding some search entries.");
@@ -469,17 +469,17 @@ namespace DevLocker.Tools.AssetManagement
 						if (!data.Found.Contains(foundObj)) {
 							data.Found.Add(foundObj);
 							_currentResults.TryAddType(foundObj.GetType());
-							_currentResults.AddSearchToResult(foundObj, data.Root);
+							_currentResults.AddToCombinedList(foundObj, data.Root);
 						}
 					}
 				}
 			}
 
-			foreach (var data in _currentResults.ResultsPerSearch) {
+			foreach (var data in _currentResults.SearchResults) {
 				data.Found.Sort((l, r) => String.Compare(AssetDatabase.GetAssetPath(l), AssetDatabase.GetAssetPath(r), StringComparison.Ordinal));
 			}
 
-			foreach (var data in _currentResults.SearchesPerResult) {
+			foreach (var data in _currentResults.CombinedFoundList) {
 				data.Found.Sort((l, r) => String.Compare(AssetDatabase.GetAssetPath(l), AssetDatabase.GetAssetPath(r), StringComparison.Ordinal));
 				data.ShowDetails = false;
 			}
@@ -685,7 +685,7 @@ namespace DevLocker.Tools.AssetManagement
 					_selectedResultProcessor = EditorGUILayout.Popup(_selectedResultProcessor, processorNames, GUILayout.Width(150));
 
 					if (GUILayout.Button(EditorGUIUtility.IconContent("PlayButton"), GUILayout.ExpandWidth(false)) && _currentResults != null) {
-						IEnumerable<UnityEngine.Object> results = _currentResults.ResultsPerSearch
+						IEnumerable<UnityEngine.Object> results = _currentResults.SearchResults
 							.Where(
 								rd => rd.Root != null &&
 									  (string.IsNullOrEmpty(_resultsSearchEntryFilter) ||
@@ -705,7 +705,7 @@ namespace DevLocker.Tools.AssetManagement
 
 			EditorGUILayout.BeginHorizontal();
 			{
-				_resultsViewMode = (ResultsViewMode)EditorGUILayout.EnumPopup("View Format", _resultsViewMode, GUILayout.ExpandWidth(true));
+				_resultsViewMode = (ResultsViewMode)EditorGUILayout.EnumPopup("Display Modes", _resultsViewMode, GUILayout.ExpandWidth(true));
 				_resultsPathMode = (ResultsPathMode)EditorGUILayout.EnumPopup(_resultsPathMode, GUILayout.MaxWidth(75f));
 			}
 			EditorGUILayout.EndHorizontal();
@@ -729,8 +729,8 @@ namespace DevLocker.Tools.AssetManagement
 
 				if (GUILayout.Button("Toggle Fold", GUILayout.ExpandWidth(false)) && _currentResults != null) {
 					List<SearchResultData> data = _resultsViewMode switch {
-						ResultsViewMode.SearchResults => data = _currentResults.ResultsPerSearch,
-						ResultsViewMode.CombinedFoundList => data = _currentResults.SearchesPerResult,
+						ResultsViewMode.SearchResults => data = _currentResults.SearchResults,
+						ResultsViewMode.CombinedFoundList => data = _currentResults.CombinedFoundList,
 						_ => throw new NotImplementedException(),
 					};
 
@@ -758,16 +758,16 @@ namespace DevLocker.Tools.AssetManagement
 				if (_currentResults != null) {
 
 					if (index == selectList.Count - 1) { // Appended "Initial Searched Assets"
-						Selection.objects = _currentResults.ResultsPerSearch.Select(data => data.Root).ToArray();
+						Selection.objects = _currentResults.SearchResults.Select(data => data.Root).ToArray();
 
 					} else if (index == selectList.Count - 2) { // Appended "All"
-						Selection.objects = _currentResults.ResultsPerSearch.SelectMany(data => data.Found).Distinct().ToArray();
+						Selection.objects = _currentResults.SearchResults.SelectMany(data => data.Found).Distinct().ToArray();
 
 					} else if (_currentResults.ResultTypesNames.Count > 0 && index >= 1) {
 						index--;    // Exclude prepended string.
 						var selectedType = _currentResults.ResultTypesNames[index];
 
-						Selection.objects = _currentResults.ResultsPerSearch
+						Selection.objects = _currentResults.SearchResults
 							.SelectMany(pair => pair.Found)
 							.Where(obj => obj.GetType().Name == selectedType)
 							.ToArray();
@@ -782,8 +782,8 @@ namespace DevLocker.Tools.AssetManagement
 
 			if (_currentResults != null) {
 				switch (_resultsViewMode) {
-					case ResultsViewMode.SearchResults: DrawResultsData(_currentResults.ResultsPerSearch, _resultsSearchEntryFilter, _resultsFoundEntryFilter, SearchedUrlStyle, FoundedUrlStyle, _resultsPathMode, showRootIcons: false, showReplaceTool: true); break;
-					case ResultsViewMode.CombinedFoundList: DrawResultsData(_currentResults.SearchesPerResult, _resultsFoundEntryFilter, _resultsSearchEntryFilter, FoundedUrlStyle, SearchedUrlStyle, _resultsPathMode, showRootIcons: true, showReplaceTool: false); break;
+					case ResultsViewMode.SearchResults: DrawResultsData(_currentResults.SearchResults, _currentResults.CombinedFoundList, _resultsSearchEntryFilter, _resultsFoundEntryFilter, SearchedUrlStyle, FoundedUrlStyle, _resultsPathMode, showRootIcons: false, showReplaceTool: true); break;
+					case ResultsViewMode.CombinedFoundList: DrawResultsData(_currentResults.CombinedFoundList, _currentResults.SearchResults, _resultsFoundEntryFilter, _resultsSearchEntryFilter, FoundedUrlStyle, SearchedUrlStyle, _resultsPathMode, showRootIcons: true, showReplaceTool: false); break;
 				}
 			}
 
@@ -791,7 +791,7 @@ namespace DevLocker.Tools.AssetManagement
 			EditorGUILayout.EndVertical();
 		}
 
-		private static void DrawResultsData(List<SearchResultData> results, string searchEntryFilter, string foundEntryFilter, GUIStyle rootsStyle, GUIStyle foundStyle, ResultsPathMode pathMode, bool showRootIcons, bool showReplaceTool)
+		private static void DrawResultsData(List<SearchResultData> results, List<SearchResultData> otherList, string searchEntryFilter, string foundEntryFilter, GUIStyle rootsStyle, GUIStyle foundStyle, ResultsPathMode pathMode, bool showRootIcons, bool showReplaceTool)
 		{
 			for (int resultIndex = 0; resultIndex < results.Count; ++resultIndex) {
 				var data = results[resultIndex];
@@ -832,6 +832,11 @@ namespace DevLocker.Tools.AssetManagement
 				if (GUILayout.Button(new GUIContent("X", "Remove entry from list"), GUILayout.Width(20.0f), GUILayout.Height(16.0f))) {
 					results.RemoveAt(resultIndex);
 					--resultIndex;
+
+					foreach(var otherData in otherList) {
+						otherData.Found.Remove(data.Root);
+					}
+					otherList.RemoveAll(otherData => otherData.Found.Count == 0);
 				}
 
 				EditorGUILayout.EndHorizontal();
@@ -878,6 +883,21 @@ namespace DevLocker.Tools.AssetManagement
 						if (GUILayout.Button(new GUIContent("X", "Remove entry from list"), GUILayout.Width(20.0f), GUILayout.Height(14.0f))) {
 							data.Found.RemoveAt(i);
 							--i;
+
+							foreach(var otherData in otherList) {
+								if (otherData.Root == found) {
+									otherData.Found.Remove(data.Root);
+								}
+							}
+
+							if (!results.Any(d => d.Found.Contains(found))) {
+								otherList.RemoveAll(otherData => otherData.Root == found);
+							}
+
+							if (data.Found.Count == 0) {
+								results.RemoveAt(resultIndex);
+								--resultIndex;
+							}
 						}
 
 						EditorGUILayout.EndHorizontal();
@@ -963,7 +983,7 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void DrawReplaceAllPrefabs()
 		{
-			bool enableReplaceButton = _currentResults != null && _currentResults.ResultsPerSearch.Any(pair => pair.Root is GameObject && pair.Found.Any(obj => obj is SceneAsset));
+			bool enableReplaceButton = _currentResults != null && _currentResults.SearchResults.Any(pair => pair.Root is GameObject && pair.Found.Any(obj => obj is SceneAsset));
 			EditorGUI.BeginDisabledGroup(!enableReplaceButton);
 			if (GUILayout.Button(REPLACE_PREFABS_ALL_BTN, GUILayout.ExpandWidth(false))) {
 
@@ -1065,7 +1085,7 @@ namespace DevLocker.Tools.AssetManagement
 		private static void ReplaceAllPrefabResults(SearchResult searchResult, bool reparentChildren, StringBuilder replaceReport)
 		{
 			var resultDataToReplace = searchResult
-				.ResultsPerSearch
+				.SearchResults
 				.Where(data => data.Root != null)
 				.Where(data => data.ReplacePrefab != null)
 				.ToList()
@@ -1312,25 +1332,25 @@ namespace DevLocker.Tools.AssetManagement
 		[Serializable]
 		private class SearchResult
 		{
-			public List<SearchResultData> ResultsPerSearch = new List<SearchResultData>();	// Results per search object
+			public List<SearchResultData> SearchResults = new List<SearchResultData>();	// Results per search object
 			public List<string> ResultTypesNames = new List<string>();
-			public List<SearchResultData> SearchesPerResult = new List<SearchResultData>();	// Searches per result object
+			public List<SearchResultData> CombinedFoundList = new List<SearchResultData>();	// Searches per result object
 
 			public void Reset()
 			{
-				ResultsPerSearch.Clear();
+				SearchResults.Clear();
 				ResultTypesNames.Clear();
-				SearchesPerResult.Clear();
+				CombinedFoundList.Clear();
 			}
 
 			public bool TryGetValue(Object key, out SearchResultData data)
 			{
-				var index = ResultsPerSearch.FindIndex(p => p.Root == key);
+				var index = SearchResults.FindIndex(p => p.Root == key);
 				if (index == -1) {
 					data = null;
 					return false;
 				} else {
-					data = ResultsPerSearch[index];
+					data = SearchResults[index];
 					return true;
 				}
 
@@ -1352,11 +1372,11 @@ namespace DevLocker.Tools.AssetManagement
 					throw new ArgumentNullException("Null key not allowed!");
 				}
 
-				if (ResultsPerSearch.Any(p => p.Root == key)) {
+				if (SearchResults.Any(p => p.Root == key)) {
 					throw new ArgumentException($"Key {key.name} already exists!");
 				}
 
-				ResultsPerSearch.Add(data);
+				SearchResults.Add(data);
 			}
 
 			public void TryAddType(Type type)
@@ -1366,17 +1386,17 @@ namespace DevLocker.Tools.AssetManagement
 				}
 			}
 
-			public void AddSearchToResult(Object foundObject, Object searchSource)
+			public void AddToCombinedList(Object foundObject, Object searchSource)
 			{
-				foreach(var combinedData in SearchesPerResult) {
+				foreach(var combinedData in CombinedFoundList) {
 					if (foundObject == combinedData.Root) {
 						combinedData.Found.Add(searchSource);
 						return;
 					}
 				}
 
-				SearchesPerResult.Add(new SearchResultData() { Root = foundObject });
-				SearchesPerResult.Last().Found.Add(searchSource);
+				CombinedFoundList.Add(new SearchResultData() { Root = foundObject });
+				CombinedFoundList.Last().Found.Add(searchSource);
 			}
 		}
 
