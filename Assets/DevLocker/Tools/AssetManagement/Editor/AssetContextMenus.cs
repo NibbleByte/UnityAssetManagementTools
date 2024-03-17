@@ -1,3 +1,5 @@
+// MIT License Copyright(c) 2024 Filip Slavov, https://github.com/NibbleByte/UnityAssetManagementTools
+
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;

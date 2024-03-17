@@ -1,3 +1,5 @@
+// MIT License Copyright(c) 2024 Filip Slavov, https://github.com/NibbleByte/UnityAssetManagementTools
+
 using System.IO;
 using UnityEditor;
 using UnityEngine;
