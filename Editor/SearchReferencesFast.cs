@@ -1,3 +1,5 @@
+// MIT License Copyright(c) 2024 Filip Slavov, https://github.com/NibbleByte/UnityAssetManagementTools
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -336,7 +338,11 @@ namespace DevLocker.Tools.AssetManagement
 
 			EditorGUILayout.EndHorizontal();
 
-			DrawResults();
+			GUILayout.Space(4f);
+
+			if (_currentResults != null) {
+				DrawResults();
+			}
 
 			m_SerializedObject.ApplyModifiedProperties();
 		}
@@ -378,25 +384,13 @@ namespace DevLocker.Tools.AssetManagement
 
 					var guids = AssetDatabase.FindAssets("", new string[] { targetPath });
 					foreach (var guid in guids) {
-						var foundTarget = AssetDatabase.LoadAssetAtPath<Object>(AssetDatabase.GUIDToAssetPath(guid));
-
-						if (!SearchEntryData.IsSupported(foundTarget)) {
-							// Local Ids of non-foreign nested assets are actually 64bit numbers, but unity provides only 32bit int?
-							Debug.LogWarning($"Asset {foundTarget.name} is a normal asset instance nested in another one and is not supported for Unity versions before 2018.2.x for search.", foundTarget);
-							continue;
-						}
+						var foundTarget = AssetDatabase.LoadMainAssetAtPath(AssetDatabase.GUIDToAssetPath(guid));
 
 						targetEntries.Add(new SearchEntryData(foundTarget));
 					}
 					continue;
 				}
 
-
-				if (!SearchEntryData.IsSupported(target)) {
-					// Local Ids of non-foreign nested assets are actually 64bit numbers, but unity provides only 32bit int?
-					Debug.LogWarning($"Asset {target.name} is a normal asset instance nested in another one and is not supported for Unity versions before 2018.2.x for search.", target);
-					continue;
-				}
 				targetEntries.Add(new SearchEntryData(target));
 			}
 
@@ -404,15 +398,17 @@ namespace DevLocker.Tools.AssetManagement
 			if (targetEntries.Count == 0)
 				return;
 
-			PerformSearchWork(targetEntries, _searchFilter);
+			PerformSearchWork(_searchMetas, targetEntries, _searchMainAssetOnly, _searchFilter);
 		}
 
-		private void PerformSearchWork(List<SearchEntryData> targetEntries, SearchAssetsFilter searchFilter)
+		private void PerformSearchWork(SearchMetas searchMetas, List<SearchEntryData> targetEntries, bool searchMainAssetOnly, SearchAssetsFilter searchFilter)
 		{
 			var searchPaths = searchFilter.GetFilteredPaths().ToArray();
 
 			// Search targets must be provided when adding to history, to clear duplicates.
 			AddNewResultsEntry(new SearchResult() {
+				SearchMetas = searchMetas,
+				SearchMainAssetOnly = searchMainAssetOnly,
 				SearchTargetEntries = targetEntries.ToArray(),
 				SearchFilter = searchFilter.Clone(),
 			});
@@ -433,7 +429,7 @@ namespace DevLocker.Tools.AssetManagement
 				var progressHandle = new ProgressHandle(pathsBatch.Length);
 
 				var task = new Task<Dictionary<SearchEntryData, List<string>>>(
-					() => SearchJob(pathsBatch, _searchMetas, _searchMainAssetOnly, appDataPath, targetEntries, progressHandle)
+					() => SearchJob(pathsBatch, searchMetas, searchMainAssetOnly, appDataPath, targetEntries, progressHandle)
 				);
 
 				tasks.Add(task);
@@ -470,7 +466,7 @@ namespace DevLocker.Tools.AssetManagement
 				SearchEntryData searchEntry = pair.Key;
 
 				foreach (string matchGuid in pair.Value) {
-					var foundObj = AssetDatabase.LoadAssetAtPath<Object>(matchGuid);
+					var foundObj = AssetDatabase.LoadMainAssetAtPath(matchGuid);
 
 					// If object is invalid for some reason - skip. (script of scriptable object was deleted or something)
 					if (foundObj == null) {
@@ -642,7 +638,7 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void PerformTextSearch(string text)
 		{
-			PerformSearchWork(new List<SearchEntryData>() { new SearchEntryData(text, this) }, _searchFilter);
+			PerformSearchWork(_searchMetas, new List<SearchEntryData>() { new SearchEntryData(text, this) }, _searchMainAssetOnly, _searchFilter);
 			return;
 		}
 
@@ -683,11 +679,26 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void DrawResults()
 		{
-			GUILayout.Label("Results:", EditorStyles.boldLabel);
+			EditorGUILayout.BeginHorizontal();
+			{
+				GUILayout.Label("", GUI.skin.horizontalSlider);
+
+				GUILayout.Label("Results", EditorStyles.boldLabel, GUILayout.ExpandWidth(false));
+
+				GUILayout.Label("", GUI.skin.horizontalSlider);
+
+				if (GUILayout.Button(new GUIContent("X", "Clear all results"), EditorStyles.label, GUILayout.ExpandWidth(false))) {
+					_resultsHistory.Clear();
+					GUIUtility.ExitGUI();
+				}
+			}
+			EditorGUILayout.EndHorizontal();
+
+			GUILayout.Space(4f);
 
 			EditorGUILayout.BeginHorizontal();
 			{
-				EditorGUILayout.LabelField("Save slots", GUILayout.Width(EditorGUIUtility.labelWidth - 2f));
+				EditorGUILayout.LabelField("Saved Search Results", GUILayout.Width(EditorGUIUtility.labelWidth - 2f));
 				DrawSaveResultsSlots();
 
 				GUILayout.FlexibleSpace();
@@ -755,7 +766,7 @@ namespace DevLocker.Tools.AssetManagement
 
 				EditorGUI.BeginDisabledGroup(_currentResults == null || _currentResults.SearchTargetEntries.Length == 0);
 				if (GUILayout.Button(new GUIContent("Retry Search", "Retry same search that results were produced from"), EditorStyles.miniButton, GUILayout.ExpandWidth(false))) {
-					PerformSearchWork(_currentResults.SearchTargetEntries.ToList(), _currentResults.SearchFilter);
+					PerformSearchWork(_currentResults.SearchMetas, _currentResults.SearchTargetEntries.ToList(), _currentResults.SearchMainAssetOnly, _currentResults.SearchFilter);
 				}
 				EditorGUI.EndDisabledGroup();
 
@@ -812,6 +823,8 @@ namespace DevLocker.Tools.AssetManagement
 
 		private static void DrawResultsData(List<SearchResultData> results, List<SearchResultData> otherList, string searchEntryFilter, string foundEntryFilter, GUIStyle rootsStyle, GUIStyle foundStyle, ResultsPathMode pathMode, bool showRootIcons, bool showReplaceTool)
 		{
+			const string missingLabel = "-- Missing --";
+
 			for (int resultIndex = 0; resultIndex < results.Count; ++resultIndex) {
 				var data = results[resultIndex];
 
@@ -826,7 +839,9 @@ namespace DevLocker.Tools.AssetManagement
 
 				string searchPath = AssetDatabase.GetAssetPath(data.Root);
 				if (string.IsNullOrEmpty(searchPath)) {
-					searchPath = "-- Missing --";
+					searchPath = missingLabel;
+				} else if (AssetDatabase.IsSubAsset(data.Root)) {
+					searchPath += "/" + data.Root.name;
 				}
 
 				if (showRootIcons) {
@@ -879,7 +894,9 @@ namespace DevLocker.Tools.AssetManagement
 
 						string foundPath = AssetDatabase.GetAssetPath(found);
 						if (string.IsNullOrEmpty(foundPath)) {
-							foundPath = "-- Missing --";
+							foundPath = missingLabel;
+						} else if (AssetDatabase.IsSubAsset(found)) {
+							foundPath += "/" + found.name;
 						}
 
 						if (!showRootIcons) {
@@ -1281,6 +1298,37 @@ namespace DevLocker.Tools.AssetManagement
 		}
 
 
+		private static string SerializeReference(Object obj)
+		{
+			AssetDatabase.TryGetGUIDAndLocalFileIdentifier(obj, out string guid, out long localId);
+			return AssetDatabase.IsSubAsset(obj) ? guid + "|" + localId : guid;
+		}
+
+		private static Object DeserializeReference(string data, out string guid, out long localId)
+		{
+			string[] tokens = data.Split('|', StringSplitOptions.RemoveEmptyEntries);
+
+			if (tokens.Length <= 1) {
+				guid = data;
+				localId = 0;
+				return AssetDatabase.LoadMainAssetAtPath(AssetDatabase.GUIDToAssetPath(data));
+			}
+
+			guid = tokens[0];
+			localId = long.Parse(tokens[1]);
+
+			var subAssets = AssetDatabase.LoadAllAssetRepresentationsAtPath(AssetDatabase.GUIDToAssetPath(guid));
+			foreach (Object subAsset in subAssets) {
+				AssetDatabase.TryGetGUIDAndLocalFileIdentifier(subAsset, out string _, out long subAssetId);
+
+				if (localId == subAssetId) {
+					return subAsset;
+				}
+			}
+
+			return null;
+		}
+
 		[Serializable]
 		private class SearchEntryData : ISerializable
 		{
@@ -1290,7 +1338,7 @@ namespace DevLocker.Tools.AssetManagement
 			[field: SerializeField] public bool IsSubAsset { get; private set; }
 			[field: SerializeField] public string MainAssetPath { get; private set; } = "";
 			[field: SerializeField] public string Guid { get; private set; } = "";
-			[field: SerializeField] public string LocalId { get; private set; };
+			[field: SerializeField] public string LocalId { get; private set; } = "";
 
 			public SearchEntryData() { }
 
@@ -1300,12 +1348,20 @@ namespace DevLocker.Tools.AssetManagement
 				MainAssetPath = AssetDatabase.GetAssetPath(target);
 				IsSubAsset = AssetDatabase.IsSubAsset(target);
 
-				TryGetGUIDAndLocalFileIdentifier(Target);
+				AssetDatabase.TryGetGUIDAndLocalFileIdentifier(target, out string guid, out long localId);
+				Guid = guid;
+
+				// LocalId is 102900000 for folders, scenes and unknown asset types. Probably marks this as invalid id.
+				// For unknown asset types, which actually have some localIds inside them (custom made), this will be invalid when linked in places.
+				// Example: Custom generated mesh files that start with "--- !u!43 &4300000" at the top, will actually use 4300000 in the reference when linked somewhere.
+				if (localId != 102900000) {
+					LocalId = localId.ToString();
+				}
 
 				// Prefabs don't have localId (or rather it is not used in the scenes at least).
 				// We don't support searching for nested game objects of a prefab.
 				if (Target is GameObject) {
-					LocalId = null;
+					LocalId = "";
 				}
 			}
 
@@ -1332,69 +1388,19 @@ namespace DevLocker.Tools.AssetManagement
 					;
 			}
 
-			public static bool IsSupported(Object target)
-			{
-#if UNITY_2018_2_OR_NEWER
-				return true;
-#else
-				return AssetDatabase.IsMainAsset(target) || AssetDatabase.IsForeignAsset(target);
-#endif
-			}
-
-			private void TryGetGUIDAndLocalFileIdentifier(Object target)
-			{
-#if UNITY_2018_2_OR_NEWER
-
-				string guid;
-				long localId;
-				AssetDatabase.TryGetGUIDAndLocalFileIdentifier(target, out guid, out localId);
-				Guid = guid;
-
-
-
-				// LocalId is 102900000 for folders, scenes and unknown asset types. Probably marks this as invalid id.
-				// For unknown asset types, which actually have some localIds inside them (custom made), this will be invalid when linked in places.
-				// Example: Custom generated mesh files that start with "--- !u!43 &4300000" at the top, will actually use 4300000 in the reference when linked somewhere.
-				if (localId != 102900000) {
-					LocalId = localId.ToString();
-				}
-
-#else
-				if (!IsSupported(target)) {
-					// Local Ids of non-foreign nested assets are actually 64bit numbers, but unity provides only 32bit int?
-					throw new InvalidOperationException("Unsupported nested instances.");
-				}
-
-				Guid = AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(target));
-				LocalId = AssetDatabase.IsMainAsset(target) ? null : Unsupported.GetLocalIdentifierInFile(target.GetInstanceID()).ToString();
-#endif
-			}
-
-
 			#region Serialization
 
 			private SearchEntryData(SerializationInfo info, StreamingContext context)
 			{
 				TargetText = info.GetString(nameof(TargetText));
 
-				Target = AssetDatabase.LoadAssetAtPath<Object>(AssetDatabase.GUIDToAssetPath(info.GetString(nameof(Target))));
-				if (Target) {
-					MainAssetPath = AssetDatabase.GetAssetPath(Target);
-				} else {
-					Target = AssetDatabase.LoadAssetAtPath<Object>(MainAssetPath);
-				}
+				Target = DeserializeReference(info.GetString(nameof(Target)), out string guid, out long localId);
 
-				if (Target) {
-					IsSubAsset = AssetDatabase.IsSubAsset(Target);
+				IsSubAsset = AssetDatabase.IsSubAsset(Target);
+				MainAssetPath = AssetDatabase.GUIDToAssetPath(Guid);
 
-					TryGetGUIDAndLocalFileIdentifier(Target);
-
-					// Prefabs don't have localId (or rather it is not used in the scenes at least).
-					// We don't support searching for nested game objects of a prefab.
-					if (Target is GameObject) {
-						LocalId = null;
-					}
-				}
+				Guid = guid;
+				LocalId = IsSubAsset ? localId.ToString() : "";
 			}
 
 
@@ -1402,8 +1408,7 @@ namespace DevLocker.Tools.AssetManagement
 			{
 				info.AddValue(nameof(TargetText), TargetText);
 
-				info.AddValue(nameof(Target), AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(Target)));
-				info.AddValue(nameof(MainAssetPath), MainAssetPath);
+				info.AddValue(nameof(Target), SerializeReference(Target));
 			}
 
 			#endregion
@@ -1416,6 +1421,8 @@ namespace DevLocker.Tools.AssetManagement
 			public List<string> ResultTypesNames = new List<string>();
 			public List<SearchResultData> CombinedFoundList = new List<SearchResultData>(); // Searches per result object
 
+			public SearchMetas SearchMetas = SearchMetas.SearchWithMetas;
+			public bool SearchMainAssetOnly = false;
 			public SearchEntryData[] SearchTargetEntries = new SearchEntryData[0];
 			public SearchAssetsFilter SearchFilter = new SearchAssetsFilter();
 
@@ -1432,6 +1439,12 @@ namespace DevLocker.Tools.AssetManagement
 					return true;
 
 				if (ReferenceEquals(other, null))
+					return false;
+
+				if (SearchMetas != other.SearchMetas)
+					return false;
+
+				if (SearchMainAssetOnly != other.SearchMainAssetOnly)
 					return false;
 
 				if (SearchTargetEntries.Length != other.SearchTargetEntries.Length)
@@ -1520,11 +1533,10 @@ namespace DevLocker.Tools.AssetManagement
 
 			private SearchResultData(SerializationInfo info, StreamingContext context)
 			{
-				Root = AssetDatabase.LoadAssetAtPath<Object>(AssetDatabase.GUIDToAssetPath(info.GetString(nameof(Root))));
-				var foundGuids = (string[])info.GetValue(nameof(Found), typeof(string[]));
-				Found = foundGuids
-					.Select(AssetDatabase.GUIDToAssetPath)
-					.Select(AssetDatabase.LoadAssetAtPath<Object>)
+				Root = DeserializeReference(info.GetString(nameof(Root)), out _, out _);
+				var foundReferences = (string[])info.GetValue(nameof(Found), typeof(string[]));
+				Found = foundReferences
+					.Select(r => DeserializeReference(r, out _, out _))
 					.ToList();
 
 				ShowDetails = info.GetBoolean(nameof(ShowDetails));
@@ -1534,8 +1546,8 @@ namespace DevLocker.Tools.AssetManagement
 
 			public void GetObjectData(SerializationInfo info, StreamingContext context)
 			{
-				info.AddValue(nameof(Root), AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(Root)));
-				info.AddValue(nameof(Found), Found.Select(AssetDatabase.GetAssetPath).Select(AssetDatabase.AssetPathToGUID).ToArray());
+				info.AddValue(nameof(Root), SerializeReference(Root));
+				info.AddValue(nameof(Found), Found.Select(SerializeReference).ToArray());
 
 				info.AddValue(nameof(ShowDetails), ShowDetails);
 				info.AddValue(nameof(ReplacePrefab), AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(ReplacePrefab)));
