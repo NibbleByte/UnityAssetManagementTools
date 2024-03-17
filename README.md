@@ -115,9 +115,9 @@ This is very fast for searching prefabs references in scenes as it wouldn't load
 
 ### Example:
 In the screenshot below:
-* "Sides-Graystone" material is referenced by multiple scenes.
-* The "Car" prefab is referenced by 3 scenes.
-* "TowerLevelPlaceholder" prefab can be replaced or removed in the found scenes with another using the last field.
+* "Bullet.prefab" is referenced by the "TankShoot" animation.
+* "Tank.prefab" is referenced by multiple scenes. Can be replaced or removed in the found scenes with another using the last field.
+* The "Attack" sprite sub asset in the "AbilityIcons.png" is referenced by some prefabs and scenes.
 ![SearchReferencesFast](https://github.com/NibbleByte/UnityAssetManagementTools/blob/master/Docs/Screenshots/SearchReferencesFast.png)
 
 ## Find References In Scene
