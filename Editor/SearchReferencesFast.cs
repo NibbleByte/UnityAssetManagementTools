@@ -47,7 +47,10 @@ namespace DevLocker.Tools.AssetManagement
 		{
 			var window = GetWindow<SearchReferencesFast>("Search References");
 			window._searchFilter.SetTemplateEnabled("Scenes", true);
+			window._searchFilter.SetTemplateEnabled("Prefabs", true);
+			window._searchFilter.SetTemplateEnabled("Script Obj", true);
 			window._selectedResultProcessor = 0;
+			window.minSize = new Vector2(300, 600f);
 		}
 
 		private void OnSelectionChange()
@@ -168,6 +171,12 @@ namespace DevLocker.Tools.AssetManagement
 				_searchFilter.ExcludePreferences = new List<string>();
 			}
 
+			if (string.IsNullOrWhiteSpace(_searchFilter.SearchFilter)) {
+				_searchFilter.SetTemplateEnabled("Scenes", true);
+				_searchFilter.SetTemplateEnabled("Prefabs", true);
+				_searchFilter.SetTemplateEnabled("Script Obj", true);
+			}
+
 			m_SerializedObject = new SerializedObject(this);
 		}
 
@@ -190,7 +199,7 @@ namespace DevLocker.Tools.AssetManagement
 		private static GUIContent RESULTS_SEARCHED_FILTER_LABEL = new GUIContent("Searched Filter", "Filter out results by hiding some search entries.");
 		private static GUIContent RESULTS_FOUND_FILTER_LABEL = new GUIContent("Found Filter", "Filter out results by hiding some found entries (under each search entry).");
 		private static GUIContent REPLACE_PREFABS_ENTRY_BTN = new GUIContent("Replace in scenes", "Replace this searched prefab entry with the specified replacement (on the left) in whichever scene it was found.");
-		private static GUIContent REPLACE_PREFABS_ALL_BTN = new GUIContent("Replace all prefabs", "Replace ALL searched prefab entries with the specified replacement (if provided) in whichever scene they were found.");
+		private static GUIContent REPLACE_PREFABS_ALL_BTN = new GUIContent("Replace All", "Replace ALL searched prefab entries with the specified replacement (if provided) in whichever scene they were found.");
 
 		private void InitStyles()
 		{
@@ -395,14 +404,18 @@ namespace DevLocker.Tools.AssetManagement
 			if (targetEntries.Count == 0)
 				return;
 
-			PerformSearchWork(targetEntries);
+			PerformSearchWork(targetEntries, _searchFilter);
 		}
 
-		private void PerformSearchWork(List<SearchEntryData> targetEntries)
+		private void PerformSearchWork(List<SearchEntryData> targetEntries, SearchAssetsFilter searchFilter)
 		{
-			var searchPaths = _searchFilter.GetFilteredPaths().ToArray();
+			var searchPaths = searchFilter.GetFilteredPaths().ToArray();
 
-			AddNewResultsEntry(new SearchResult());
+			// Search targets must be provided when adding to history, to clear duplicates.
+			AddNewResultsEntry(new SearchResult() {
+				SearchTargetEntries = targetEntries.ToArray(),
+				SearchFilter = searchFilter.Clone(),
+			});
 
 			// This used to be on demand, but having empty search results is more helpful, then having them missing.
 			foreach (var target in targetEntries) {
@@ -629,7 +642,7 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void PerformTextSearch(string text)
 		{
-			PerformSearchWork(new List<SearchEntryData>() { new SearchEntryData(text, this) });
+			PerformSearchWork(new List<SearchEntryData>() { new SearchEntryData(text, this) }, _searchFilter);
 			return;
 		}
 
@@ -716,18 +729,18 @@ namespace DevLocker.Tools.AssetManagement
 			EditorGUILayout.BeginHorizontal();
 			{
 				EditorGUI.BeginDisabledGroup(_resultsHistoryIndex <= 0);
-				if (GUILayout.Button("<", GUILayout.MaxWidth(24f))) {
+				if (GUILayout.Button("<", EditorStyles.miniButtonLeft, GUILayout.MaxWidth(24f))) {
 					SelectPreviousResults();
 				}
 				EditorGUI.EndDisabledGroup();
 
 				EditorGUI.BeginDisabledGroup(_resultsHistoryIndex >= _resultsHistory.Count - 1);
-				if (GUILayout.Button(">", GUILayout.MaxWidth(24f))) {
+				if (GUILayout.Button(">", EditorStyles.miniButtonRight, GUILayout.MaxWidth(24f))) {
 					SelectNextResults();
 				}
 				EditorGUI.EndDisabledGroup();
 
-				if (GUILayout.Button("Toggle Fold", GUILayout.ExpandWidth(false)) && _currentResults != null) {
+				if (GUILayout.Button(new GUIContent("Toggle", "Toggle collaps or expand of all the results."), EditorStyles.miniButton, GUILayout.ExpandWidth(false)) && _currentResults != null) {
 					List<SearchResultData> data = _resultsViewMode switch {
 						ResultsViewMode.SearchResults => data = _currentResults.SearchResults,
 						ResultsViewMode.CombinedFoundList => data = _currentResults.CombinedFoundList,
@@ -739,6 +752,12 @@ namespace DevLocker.Tools.AssetManagement
 						data.ForEach(data => data.ShowDetails = toggledShowDetails);
 					}
 				}
+
+				EditorGUI.BeginDisabledGroup(_currentResults == null || _currentResults.SearchTargetEntries.Length == 0);
+				if (GUILayout.Button(new GUIContent("Retry Search", "Retry same search that results were produced from"), EditorStyles.miniButton, GUILayout.ExpandWidth(false))) {
+					PerformSearchWork(_currentResults.SearchTargetEntries.ToList(), _currentResults.SearchFilter);
+				}
+				EditorGUI.EndDisabledGroup();
 
 				if (_resultsViewMode == ResultsViewMode.SearchResults) {
 					DrawReplaceAllPrefabs();
@@ -985,7 +1004,7 @@ namespace DevLocker.Tools.AssetManagement
 		{
 			bool enableReplaceButton = _currentResults != null && _currentResults.SearchResults.Any(pair => pair.Root is GameObject && pair.Found.Any(obj => obj is SceneAsset));
 			EditorGUI.BeginDisabledGroup(!enableReplaceButton);
-			if (GUILayout.Button(REPLACE_PREFABS_ALL_BTN, GUILayout.ExpandWidth(false))) {
+			if (GUILayout.Button(REPLACE_PREFABS_ALL_BTN, EditorStyles.miniButton, GUILayout.ExpandWidth(false))) {
 
 				var option = EditorUtility.DisplayDialogComplex("Reparent objects?",
 					"If prefab has other game objects attached to its children, what should I do with them?",
@@ -1181,6 +1200,8 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void AddNewResultsEntry(SearchResult results)
 		{
+			_resultsHistory.RemoveAll(sr => sr.EqualSearchTargets(results));
+
 			_resultsHistory.Add(results);
 			if (_resultsHistory.Count > 30) {
 				_resultsHistory.RemoveAt(0);
@@ -1260,14 +1281,18 @@ namespace DevLocker.Tools.AssetManagement
 		}
 
 
-		private class SearchEntryData
+		[Serializable]
+		private class SearchEntryData : ISerializable
 		{
-			public string TargetText { get; }	// For searching by text.
-			public Object Target { get; }
-			public bool IsSubAsset { get; }
-			public string MainAssetPath { get; }
-			public string Guid { get; private set; }
-			public string LocalId { get; private set; }
+			[field: SerializeField] public string TargetText { get; private set; } = "";  // For searching by text.
+			[field: SerializeField] public Object Target { get; private set; }
+
+			[field: SerializeField] public bool IsSubAsset { get; private set; }
+			[field: SerializeField] public string MainAssetPath { get; private set; } = "";
+			[field: SerializeField] public string Guid { get; private set; } = "";
+			[field: SerializeField] public string LocalId { get; private set; };
+
+			public SearchEntryData() { }
 
 			public SearchEntryData(Object target)
 			{
@@ -1288,6 +1313,23 @@ namespace DevLocker.Tools.AssetManagement
 			{
 				TargetText = targetText;
 				Target = targetContext;	// We still need some Target to show (so the rest of the code can work).
+			}
+
+			public bool Equals(SearchEntryData other)
+			{
+				if (ReferenceEquals(this, other))
+					return true;
+
+				if (ReferenceEquals(other, null))
+					return false;
+
+				return TargetText.Equals(other.TargetText)
+					&& Target == other.Target
+					&& IsSubAsset.Equals(other.IsSubAsset)
+					&& MainAssetPath.Equals(other.MainAssetPath)
+					&& Guid.Equals(other.Guid)
+					&& LocalId == other.LocalId
+					;
 			}
 
 			public static bool IsSupported(Object target)
@@ -1327,6 +1369,44 @@ namespace DevLocker.Tools.AssetManagement
 				LocalId = AssetDatabase.IsMainAsset(target) ? null : Unsupported.GetLocalIdentifierInFile(target.GetInstanceID()).ToString();
 #endif
 			}
+
+
+			#region Serialization
+
+			private SearchEntryData(SerializationInfo info, StreamingContext context)
+			{
+				TargetText = info.GetString(nameof(TargetText));
+
+				Target = AssetDatabase.LoadAssetAtPath<Object>(AssetDatabase.GUIDToAssetPath(info.GetString(nameof(Target))));
+				if (Target) {
+					MainAssetPath = AssetDatabase.GetAssetPath(Target);
+				} else {
+					Target = AssetDatabase.LoadAssetAtPath<Object>(MainAssetPath);
+				}
+
+				if (Target) {
+					IsSubAsset = AssetDatabase.IsSubAsset(Target);
+
+					TryGetGUIDAndLocalFileIdentifier(Target);
+
+					// Prefabs don't have localId (or rather it is not used in the scenes at least).
+					// We don't support searching for nested game objects of a prefab.
+					if (Target is GameObject) {
+						LocalId = null;
+					}
+				}
+			}
+
+
+			public void GetObjectData(SerializationInfo info, StreamingContext context)
+			{
+				info.AddValue(nameof(TargetText), TargetText);
+
+				info.AddValue(nameof(Target), AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(Target)));
+				info.AddValue(nameof(MainAssetPath), MainAssetPath);
+			}
+
+			#endregion
 		}
 
 		[Serializable]
@@ -1334,13 +1414,35 @@ namespace DevLocker.Tools.AssetManagement
 		{
 			public List<SearchResultData> SearchResults = new List<SearchResultData>();	// Results per search object
 			public List<string> ResultTypesNames = new List<string>();
-			public List<SearchResultData> CombinedFoundList = new List<SearchResultData>();	// Searches per result object
+			public List<SearchResultData> CombinedFoundList = new List<SearchResultData>(); // Searches per result object
+
+			public SearchEntryData[] SearchTargetEntries = new SearchEntryData[0];
+			public SearchAssetsFilter SearchFilter = new SearchAssetsFilter();
 
 			public void Reset()
 			{
 				SearchResults.Clear();
 				ResultTypesNames.Clear();
 				CombinedFoundList.Clear();
+			}
+
+			public bool EqualSearchTargets(SearchResult other)
+			{
+				if (ReferenceEquals(this, other))
+					return true;
+
+				if (ReferenceEquals(other, null))
+					return false;
+
+				if (SearchTargetEntries.Length != other.SearchTargetEntries.Length)
+					return false;
+
+				foreach(SearchEntryData entry in SearchTargetEntries) {
+					if (!other.SearchTargetEntries.Any(oe => oe.Equals(entry)))
+						return false;
+				}
+
+				return SearchFilter.Equals(other.SearchFilter);
 			}
 
 			public bool TryGetValue(Object key, out SearchResultData data)
