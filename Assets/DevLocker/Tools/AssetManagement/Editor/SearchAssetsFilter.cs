@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.Serialization;
 using UnityEditor;
 using UnityEngine;
 
@@ -13,7 +14,7 @@ namespace DevLocker.Tools.AssetManagement
 	/// Used in other tools.
 	/// </summary>
 	[Serializable]
-	public class SearchAssetsFilter
+	public class SearchAssetsFilter : ISerializable
 	{
 		[Serializable]
 		private class GUISearchTemplate
@@ -22,6 +23,8 @@ namespace DevLocker.Tools.AssetManagement
 			public string Hint;
 			public string Filter;
 			public int Count;
+
+			public GUISearchTemplate() {}
 
 			public GUISearchTemplate(string name, string searchFilter)
 			{
@@ -102,6 +105,41 @@ namespace DevLocker.Tools.AssetManagement
 			new GUISearchTemplate("Timelines", "t:TimelineAsset"),
 		};
 
+		public SearchAssetsFilter() { }
+
+		#region Serialization
+
+		private SearchAssetsFilter(SerializationInfo info, StreamingContext context)
+		{
+			_includeFoldout = info.GetBoolean(nameof(_includeFoldout));
+			_includeFolders = info.GetString(nameof(_includeFolders));
+
+			_excludeFoldout = info.GetBoolean(nameof(_excludeFoldout));
+			_excludeFolders = info.GetString(nameof(_excludeFolders));
+
+			ExcludePackages = info.GetBoolean(nameof(ExcludePackages));
+			ExcludePreferences = (List<string>) info.GetValue(nameof(ExcludePreferences), typeof(List<string>));
+
+			_searchFilter = info.GetString(nameof(_searchFilter));
+		}
+
+
+		public void GetObjectData(SerializationInfo info, StreamingContext context)
+		{
+			info.AddValue(nameof(_includeFoldout), _includeFoldout);
+			info.AddValue(nameof(_includeFolders), _includeFolders);
+
+			info.AddValue(nameof(_excludeFoldout), _excludeFoldout);
+			info.AddValue(nameof(_excludeFolders), _excludeFolders);
+
+			info.AddValue(nameof(ExcludePackages), ExcludePackages);
+			info.AddValue(nameof(ExcludePreferences), ExcludePreferences);
+
+			info.AddValue(nameof(_searchFilter), _searchFilter);
+		}
+
+		#endregion
+
 		public void SetTemplateEnabled(string label, bool enable)
 		{
 			var template =_searchTemplates.First(t => t.Name == label);
@@ -127,6 +165,24 @@ namespace DevLocker.Tools.AssetManagement
 			clone._excludeFolders = _excludeFolders;
 
 			return clone;
+		}
+
+		public bool Equals(SearchAssetsFilter other)
+		{
+			if (ReferenceEquals(this, other))
+				return true;
+
+			if (ReferenceEquals(other, null))
+				return false;
+
+			return _searchFilter.Equals(other._searchFilter)
+				&& ExcludePackages.Equals(other.ExcludePackages)
+				&& ExcludePreferences.SequenceEqual(other.ExcludePreferences)
+				&& _includeFoldout.Equals(other._includeFoldout)
+				&& _includeFolders.Equals(other._includeFolders)
+				&& _excludeFoldout.Equals(other._excludeFoldout)
+				&& _excludeFolders.Equals(other._excludeFolders)
+				;
 		}
 
 		private static void DrawFoldersFilter(string label, ref bool foldout, ref string foldersFilter, string[] folderPaths)
