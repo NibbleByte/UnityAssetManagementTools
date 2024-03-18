@@ -403,7 +403,24 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void PerformSearchWork(SearchMetas searchMetas, List<SearchEntryData> targetEntries, bool searchMainAssetOnly, SearchAssetsFilter searchFilter)
 		{
-			var searchPaths = searchFilter.GetFilteredPaths().ToArray();
+			List<string> searchPaths = searchFilter.GetFilteredPaths().ToList();
+
+			switch (searchMetas) {
+				case SearchMetas.MetasOnly:
+					searchPaths = searchPaths.Select(p => p + ".meta").ToList();
+					break;
+				case SearchMetas.SearchWithMetas:
+					searchPaths = searchPaths.SelectMany(p => new string[] { p, p + ".meta"}).ToList();
+					break;
+				case SearchMetas.DontSearchMetas:
+					// Do nothing, data is already available.
+					break;
+				default: throw new NotImplementedException(searchMetas.ToString());
+			}
+
+			// Exclude well-known binary files that we never want to actually read.
+			searchPaths.RemoveAll(p => _wellKnownBinaryFileExtensions.Any(ext => p.EndsWith(ext, StringComparison.OrdinalIgnoreCase)));
+
 
 			// Search targets must be provided when adding to history, to clear duplicates.
 			AddNewResultsEntry(new SearchResult() {
@@ -422,14 +439,14 @@ namespace DevLocker.Tools.AssetManagement
 			var allMatches = new Dictionary<SearchEntryData, List<string>>();
 			var tasks = new List<Task<Dictionary<SearchEntryData, List<string>>>>();
 			int threadsCount = Environment.ProcessorCount;
-			var batchSize = searchPaths.Length <= threadsCount ? 1 : Mathf.CeilToInt((float)searchPaths.Length / threadsCount);
+			var batchSize = searchPaths.Count <= threadsCount ? 1 : Mathf.CeilToInt((float)searchPaths.Count / threadsCount);
 			var progressHandles = new List<ProgressHandle>();
 
 			foreach (var pathsBatch in Split(searchPaths, batchSize)) {
 				var progressHandle = new ProgressHandle(pathsBatch.Length);
 
 				var task = new Task<Dictionary<SearchEntryData, List<string>>>(
-					() => SearchJob(pathsBatch, searchMetas, searchMainAssetOnly, appDataPath, targetEntries, progressHandle)
+					() => SearchJob(pathsBatch, searchMainAssetOnly, appDataPath, targetEntries, progressHandle)
 				);
 
 				tasks.Add(task);
@@ -439,12 +456,12 @@ namespace DevLocker.Tools.AssetManagement
 			}
 
 			while (tasks.Any(a => !a.IsCompleted)) {
-				ShowTasksProgress(progressHandles, searchPaths.Length, tasks.Count);
+				ShowTasksProgress(progressHandles, searchPaths.Count, tasks.Count);
 				System.Threading.Thread.Sleep(200);
 			}
 
 			foreach (var task in tasks) {
-				ShowTasksProgress(progressHandles, searchPaths.Length, tasks.Count);
+				ShowTasksProgress(progressHandles, searchPaths.Count, tasks.Count);
 
 				foreach (var pair in task.Result) {
 					SearchEntryData searchEntry = pair.Key;
@@ -465,12 +482,16 @@ namespace DevLocker.Tools.AssetManagement
 			foreach (var pair in allMatches) {
 				SearchEntryData searchEntry = pair.Key;
 
-				foreach (string matchGuid in pair.Value) {
+				foreach (string matchPath in pair.Value) {
 
-					if (matchGuid == searchEntry.Target.Guid)
+					const string metaExt = ".meta";
+					bool isMeta = matchPath.EndsWith(metaExt);
+					string assetPath = isMeta ? matchPath.Remove(matchPath.Length - metaExt.Length, metaExt.Length) : matchPath;
+
+					if (assetPath == searchEntry.Target.AssetPath)
 						continue;
 
-					var foundObj = AssetDatabase.LoadMainAssetAtPath(matchGuid);
+					var foundObj = AssetDatabase.LoadMainAssetAtPath(assetPath);
 
 					// If object is invalid for some reason - skip. (script of scriptable object was deleted or something)
 					if (foundObj == null) {
@@ -479,6 +500,8 @@ namespace DevLocker.Tools.AssetManagement
 
 					SearchResultData data = _currentResults[searchEntry.Target];
 					var foundLocation = new AssetHandle(foundObj);
+					foundLocation.AssetPath = matchPath;
+
 					if (!data.Found.Contains(foundLocation)) {
 						data.Found.Add(foundLocation);
 						_currentResults.TryAddType(foundObj.GetType());
@@ -499,8 +522,7 @@ namespace DevLocker.Tools.AssetManagement
 			EditorUtility.ClearProgressBar();
 		}
 
-		private static Dictionary<SearchEntryData, List<string>> SearchJob(string[] searchPaths, SearchMetas searchMetas,
-			bool searchMainAssetOnly, string appDataPath, List<SearchEntryData> targetEntries, ProgressHandle progress)
+		private static Dictionary<SearchEntryData, List<string>> SearchJob(string[] searchPaths, bool searchMainAssetOnly, string appDataPath, List<SearchEntryData> targetEntries, ProgressHandle progress)
 		{
 			var matches = new Dictionary<SearchEntryData, List<string>>();
 			var buffers = new FileBuffers();
@@ -523,21 +545,7 @@ namespace DevLocker.Tools.AssetManagement
 
 				buffers.Clear();
 
-				if (searchMetas == SearchMetas.MetasOnly) {
-					buffers.AppendFile(searchFullPath + ".meta");
-				} else {
-					// Exclude well-known binary files that we never want to actually read.
-					if (!_wellKnownBinaryFileExtensions.Any(ext => searchFullPath.EndsWith(ext, StringComparison.OrdinalIgnoreCase))) {
-						buffers.AppendFile(searchFullPath);
-					}
-
-					if (searchMetas == SearchMetas.SearchWithMetas) {
-						// Append a line break to reduce possibility of finding strings that start in
-						// a file and continues in the .meta
-						buffers.StringBuilder.Append("\n");
-						buffers.AppendFile(searchFullPath + ".meta");
-					}
-				}
+				buffers.AppendFile(searchFullPath);
 
 				string contents = buffers.StringBuilder.ToString();
 
@@ -648,11 +656,11 @@ namespace DevLocker.Tools.AssetManagement
 		/// <summary>
 		/// Split input collection into chunks of a given size
 		/// </summary>
-		private static List<T[]> Split<T>(T[] targets, int chunkSize)
+		private static List<T[]> Split<T>(IList<T> targets, int chunkSize)
 		{
 			var output = new List<T[]>();
 
-			var chunksCount = Mathf.FloorToInt((float)targets.Length / chunkSize);
+			var chunksCount = Mathf.FloorToInt((float)targets.Count / chunkSize);
 
 			for (int i = 0; i < chunksCount; i++) {
 				// full chunk
@@ -666,7 +674,7 @@ namespace DevLocker.Tools.AssetManagement
 
 			{
 				// remaining chunk
-				var remain = targets.Length % chunkSize;
+				var remain = targets.Count % chunkSize;
 				if (remain != 0) {
 					var chunk = new T[remain];
 
@@ -743,13 +751,22 @@ namespace DevLocker.Tools.AssetManagement
 			EditorGUILayout.BeginHorizontal();
 			{
 				EditorGUI.BeginDisabledGroup(_resultsHistoryIndex <= 0);
-				if (GUILayout.Button("<", EditorStyles.miniButtonLeft, GUILayout.MaxWidth(24f))) {
+				if (GUILayout.Button("<", EditorStyles.miniButtonLeft, GUILayout.MaxWidth(20f))) {
 					SelectPreviousResults();
 				}
 				EditorGUI.EndDisabledGroup();
 
+				EditorGUI.BeginDisabledGroup(_resultsHistory.Count == 0);
+				if (GUILayout.Button(new GUIContent("X", "Remove displayed results from history"), EditorStyles.miniButtonMid, GUILayout.MaxWidth(13f))) {
+					if (EditorUtility.DisplayDialog("Remove Results?", "Are you sure you want to remove currently displayed results from the history?", "Yes", "No")) {
+						_resultsHistory.RemoveAt(_resultsHistoryIndex);
+						_resultsHistoryIndex = Mathf.Clamp(_resultsHistoryIndex, 0, _resultsHistory.Count);
+					}
+				}
+				EditorGUI.EndDisabledGroup();
+
 				EditorGUI.BeginDisabledGroup(_resultsHistoryIndex >= _resultsHistory.Count - 1);
-				if (GUILayout.Button(">", EditorStyles.miniButtonRight, GUILayout.MaxWidth(24f))) {
+				if (GUILayout.Button(">", EditorStyles.miniButtonRight, GUILayout.MaxWidth(20f))) {
 					SelectNextResults();
 				}
 				EditorGUI.EndDisabledGroup();
@@ -847,8 +864,8 @@ namespace DevLocker.Tools.AssetManagement
 				}
 
 				if (showRootIcons) {
-					Texture icon = AssetDatabase.GetCachedIcon(searchPath);
-					if (GUILayout.Button(new GUIContent(icon), ResultIconStyle, GUILayout.Width(EditorGUIUtility.singleLineHeight), GUILayout.Height(EditorGUIUtility.singleLineHeight)) && data.Root.Exists()) {
+					GUIContent icon = searchPath.EndsWith(".meta") ? EditorGUIUtility.IconContent("MetaFile Icon") : new GUIContent(AssetDatabase.GetCachedIcon(searchPath));
+					if (GUILayout.Button(icon, ResultIconStyle, GUILayout.Width(EditorGUIUtility.singleLineHeight), GUILayout.Height(EditorGUIUtility.singleLineHeight)) && data.Root.Exists()) {
 						EditorGUIUtility.PingObject(data.Root.ToUnityObject());
 					}
 					EditorGUIUtility.AddCursorRect(GUILayoutUtility.GetLastRect(), MouseCursor.Link);
@@ -901,8 +918,8 @@ namespace DevLocker.Tools.AssetManagement
 						}
 
 						if (!showRootIcons) {
-							Texture icon = AssetDatabase.GetCachedIcon(foundPath);
-							if (GUILayout.Button(new GUIContent(icon), ResultIconStyle, GUILayout.Width(EditorGUIUtility.singleLineHeight), GUILayout.Height(EditorGUIUtility.singleLineHeight)) && found.Exists()) {
+							GUIContent icon = foundPath.EndsWith(".meta") ? EditorGUIUtility.IconContent("MetaFile Icon") : new GUIContent(AssetDatabase.GetCachedIcon(foundPath));
+							if (GUILayout.Button(icon, ResultIconStyle, GUILayout.Width(EditorGUIUtility.singleLineHeight), GUILayout.Height(EditorGUIUtility.singleLineHeight)) && found.Exists()) {
 								EditorGUIUtility.PingObject(found.ToUnityObject());
 							}
 							EditorGUIUtility.AddCursorRect(GUILayoutUtility.GetLastRect(), MouseCursor.Link);
