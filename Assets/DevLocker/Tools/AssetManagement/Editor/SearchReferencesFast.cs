@@ -466,6 +466,10 @@ namespace DevLocker.Tools.AssetManagement
 				SearchEntryData searchEntry = pair.Key;
 
 				foreach (string matchGuid in pair.Value) {
+
+					if (matchGuid == searchEntry.Target.Guid)
+						continue;
+
 					var foundObj = AssetDatabase.LoadMainAssetAtPath(matchGuid);
 
 					// If object is invalid for some reason - skip. (script of scriptable object was deleted or something)
@@ -473,23 +477,22 @@ namespace DevLocker.Tools.AssetManagement
 						continue;
 					}
 
-					if (foundObj != searchEntry.Target) {
-						SearchResultData data = _currentResults[searchEntry.Target];
-						if (!data.Found.Contains(foundObj)) {
-							data.Found.Add(foundObj);
-							_currentResults.TryAddType(foundObj.GetType());
-							_currentResults.AddToCombinedList(foundObj, data.Root);
-						}
+					SearchResultData data = _currentResults[searchEntry.Target];
+					var foundLocation = new AssetHandle(foundObj);
+					if (!data.Found.Contains(foundLocation)) {
+						data.Found.Add(foundLocation);
+						_currentResults.TryAddType(foundObj.GetType());
+						_currentResults.AddToCombinedList(foundLocation, data.Root);
 					}
 				}
 			}
 
 			foreach (var data in _currentResults.SearchResults) {
-				data.Found.Sort((l, r) => String.Compare(AssetDatabase.GetAssetPath(l), AssetDatabase.GetAssetPath(r), StringComparison.Ordinal));
+				data.Found.Sort((l, r) => String.Compare(l.AssetPath, r.AssetPath, StringComparison.Ordinal));
 			}
 
 			foreach (var data in _currentResults.CombinedFoundList) {
-				data.Found.Sort((l, r) => String.Compare(AssetDatabase.GetAssetPath(l), AssetDatabase.GetAssetPath(r), StringComparison.Ordinal));
+				data.Found.Sort((l, r) => String.Compare(l.AssetPath, r.AssetPath, StringComparison.Ordinal));
 				data.ShowDetails = false;
 			}
 
@@ -583,18 +586,18 @@ namespace DevLocker.Tools.AssetManagement
 				return content.Contains(searchData.TargetText);
 
 			// Embedded asset searching for references in the same main asset file.
-			if (searchData.IsSubAsset && searchData.MainAssetPath == searchPath) {
-				return content.Contains($"{{fileID: {searchData.LocalId}}}");   // If reference in the same file, guid is not used.
+			if (searchData.Target.IsSubAsset && searchData.Target.AssetPath == searchPath) {
+				return content.Contains($"{{fileID: {searchData.Target.LocalId}}}");   // If reference in the same file, guid is not used.
 
 			} else {
 
-				if (matchGuidOnly || string.IsNullOrEmpty(searchData.LocalId))
-					return content.Contains(searchData.Guid);
+				if (matchGuidOnly || string.IsNullOrEmpty(searchData.Target.LocalId))
+					return content.Contains(searchData.Target.Guid);
 
 				int guidIndex = 0;
 				while (true) {
 
-					guidIndex = content.IndexOf(searchData.Guid, guidIndex + 1, StringComparison.Ordinal);
+					guidIndex = content.IndexOf(searchData.Target.Guid, guidIndex + 1, StringComparison.Ordinal);
 
 					if (guidIndex < 0)
 						return false;
@@ -604,7 +607,7 @@ namespace DevLocker.Tools.AssetManagement
 
 					// Local id is to the left of the guid. Example:
 					// - target: {fileID: 6986883487782155098, guid: af7e5b759d61c1b4fbf64e33d8f248dc, type: 3}
-					int localIdIndex = content.IndexOf(searchData.LocalId, startOfLineIndex, StringComparison.Ordinal);
+					int localIdIndex = content.IndexOf(searchData.Target.LocalId, startOfLineIndex, StringComparison.Ordinal);
 					if (localIdIndex < 0)
 						return false;
 
@@ -638,7 +641,7 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void PerformTextSearch(string text)
 		{
-			PerformSearchWork(_searchMetas, new List<SearchEntryData>() { new SearchEntryData(text, this) }, _searchMainAssetOnly, _searchFilter);
+			PerformSearchWork(_searchMetas, new List<SearchEntryData>() { new SearchEntryData(text) }, _searchMainAssetOnly, _searchFilter);
 			return;
 		}
 
@@ -709,17 +712,17 @@ namespace DevLocker.Tools.AssetManagement
 					_selectedResultProcessor = EditorGUILayout.Popup(_selectedResultProcessor, processorNames, GUILayout.Width(150));
 
 					if (GUILayout.Button(EditorGUIUtility.IconContent("PlayButton"), GUILayout.ExpandWidth(false)) && _currentResults != null) {
-						IEnumerable<UnityEngine.Object> results = _currentResults.SearchResults
+						var results = _currentResults.SearchResults
 							.Where(
-								rd => rd.Root != null &&
+								rd => rd.Root.Exists() &&
 									  (string.IsNullOrEmpty(_resultsSearchEntryFilter) ||
-									   rd.Root.name.IndexOf(_resultsSearchEntryFilter, StringComparison.OrdinalIgnoreCase) !=
+									   rd.Root.Name.IndexOf(_resultsSearchEntryFilter, StringComparison.OrdinalIgnoreCase) !=
 									   -1))
-							.SelectMany(rd => rd.Found)
+							.SelectMany(rd => rd.Found.Select(f => f.ToUnityObject()))
 							.Where(
-								rd => rd != null &&
+								obj => obj != null &&
 									  (string.IsNullOrEmpty(_resultsFoundEntryFilter) ||
-									   rd.name.IndexOf(_resultsFoundEntryFilter, StringComparison.OrdinalIgnoreCase) != -1));
+									   obj.name.IndexOf(_resultsFoundEntryFilter, StringComparison.OrdinalIgnoreCase) != -1));
 
 						ResultProcessors[_selectedResultProcessor].ProcessResults(results);
 					}
@@ -788,17 +791,17 @@ namespace DevLocker.Tools.AssetManagement
 				if (_currentResults != null) {
 
 					if (index == selectList.Count - 1) { // Appended "Initial Searched Assets"
-						Selection.objects = _currentResults.SearchResults.Select(data => data.Root).ToArray();
+						Selection.objects = _currentResults.SearchResults.Select(data => data.Root.ToUnityObject()).ToArray();
 
 					} else if (index == selectList.Count - 2) { // Appended "All"
-						Selection.objects = _currentResults.SearchResults.SelectMany(data => data.Found).Distinct().ToArray();
+						Selection.objects = _currentResults.SearchResults.SelectMany(data => data.Found.Select(f => f.ToUnityObject())).Distinct().ToArray();
 
 					} else if (_currentResults.ResultTypesNames.Count > 0 && index >= 1) {
 						index--;    // Exclude prepended string.
 						var selectedType = _currentResults.ResultTypesNames[index];
 
 						Selection.objects = _currentResults.SearchResults
-							.SelectMany(pair => pair.Found)
+							.SelectMany(pair => pair.Found.Select(f => f.ToUnityObject()))
 							.Where(obj => obj.GetType().Name == selectedType)
 							.ToArray();
 					}
@@ -828,8 +831,7 @@ namespace DevLocker.Tools.AssetManagement
 			for (int resultIndex = 0; resultIndex < results.Count; ++resultIndex) {
 				var data = results[resultIndex];
 
-				if (!string.IsNullOrEmpty(searchEntryFilter)
-					&& (data.Root == null || data.Root.name.IndexOf(searchEntryFilter, StringComparison.OrdinalIgnoreCase) == -1))
+				if (!string.IsNullOrEmpty(searchEntryFilter) && (data.Root.Name.IndexOf(searchEntryFilter, StringComparison.OrdinalIgnoreCase) == -1))
 					continue;
 
 				EditorGUILayout.BeginHorizontal();
@@ -837,17 +839,17 @@ namespace DevLocker.Tools.AssetManagement
 				var foldOutRect = EditorGUILayout.GetControlRect(false, EditorGUIUtility.singleLineHeight, GUILayout.Width(12f));
 				data.ShowDetails = EditorGUI.Foldout(foldOutRect, data.ShowDetails, "");
 
-				string searchPath = AssetDatabase.GetAssetPath(data.Root);
+				string searchPath = data.Root.AssetPath;
 				if (string.IsNullOrEmpty(searchPath)) {
 					searchPath = missingLabel;
-				} else if (AssetDatabase.IsSubAsset(data.Root)) {
-					searchPath += "/" + data.Root.name;
+				} else if (data.Root.IsSubAsset) {
+					searchPath += "/" + data.Root.Name;
 				}
 
 				if (showRootIcons) {
 					Texture icon = AssetDatabase.GetCachedIcon(searchPath);
-					if (GUILayout.Button(new GUIContent(icon), ResultIconStyle, GUILayout.Width(EditorGUIUtility.singleLineHeight), GUILayout.Height(EditorGUIUtility.singleLineHeight))) {
-						EditorGUIUtility.PingObject(data.Root);
+					if (GUILayout.Button(new GUIContent(icon), ResultIconStyle, GUILayout.Width(EditorGUIUtility.singleLineHeight), GUILayout.Height(EditorGUIUtility.singleLineHeight)) && data.Root.Exists()) {
+						EditorGUIUtility.PingObject(data.Root.ToUnityObject());
 					}
 					EditorGUIUtility.AddCursorRect(GUILayoutUtility.GetLastRect(), MouseCursor.Link);
 				}
@@ -856,8 +858,8 @@ namespace DevLocker.Tools.AssetManagement
 					searchPath = Path.GetFileName(searchPath);
 				}
 
-				if (GUILayout.Button(searchPath, rootsStyle, GUILayout.ExpandWidth(true)) && data.Root) {
-					EditorGUIUtility.PingObject(data.Root);
+				if (GUILayout.Button(searchPath, rootsStyle, GUILayout.ExpandWidth(true)) && data.Root.Exists()) {
+					EditorGUIUtility.PingObject(data.Root.ToUnityObject());
 				}
 				EditorGUIUtility.AddCursorRect(GUILayoutUtility.GetLastRect(), MouseCursor.Link);
 
@@ -880,8 +882,7 @@ namespace DevLocker.Tools.AssetManagement
 					for (int i = 0; i < data.Found.Count; ++i) {
 						var found = data.Found[i];
 
-						if (!string.IsNullOrEmpty(foundEntryFilter)
-							&& (found == null || found.name.IndexOf(foundEntryFilter, StringComparison.OrdinalIgnoreCase) == -1))
+						if (!string.IsNullOrEmpty(foundEntryFilter) && (found.Name.IndexOf(foundEntryFilter, StringComparison.OrdinalIgnoreCase) == -1))
 							continue;
 
 						if ((i + 1) % 2 == 0) {
@@ -892,17 +893,17 @@ namespace DevLocker.Tools.AssetManagement
 
 						GUILayout.Space(18f);
 
-						string foundPath = AssetDatabase.GetAssetPath(found);
+						string foundPath = found.AssetPath;
 						if (string.IsNullOrEmpty(foundPath)) {
 							foundPath = missingLabel;
-						} else if (AssetDatabase.IsSubAsset(found)) {
-							foundPath += "/" + found.name;
+						} else if (found.IsSubAsset) {
+							foundPath += "/" + found.Name;
 						}
 
 						if (!showRootIcons) {
 							Texture icon = AssetDatabase.GetCachedIcon(foundPath);
-							if (GUILayout.Button(new GUIContent(icon), ResultIconStyle, GUILayout.Width(EditorGUIUtility.singleLineHeight), GUILayout.Height(EditorGUIUtility.singleLineHeight))) {
-								EditorGUIUtility.PingObject(found);
+							if (GUILayout.Button(new GUIContent(icon), ResultIconStyle, GUILayout.Width(EditorGUIUtility.singleLineHeight), GUILayout.Height(EditorGUIUtility.singleLineHeight)) && found.Exists()) {
+								EditorGUIUtility.PingObject(found.ToUnityObject());
 							}
 							EditorGUIUtility.AddCursorRect(GUILayoutUtility.GetLastRect(), MouseCursor.Link);
 						}
@@ -911,8 +912,8 @@ namespace DevLocker.Tools.AssetManagement
 							foundPath = Path.GetFileName(foundPath);
 						}
 
-						if (GUILayout.Button(foundPath, foundStyle, GUILayout.ExpandWidth(true)) && found) {
-							EditorGUIUtility.PingObject(found);
+						if (GUILayout.Button(foundPath, foundStyle, GUILayout.ExpandWidth(true)) && found.Exists()) {
+							EditorGUIUtility.PingObject(found.ToUnityObject());
 						}
 						EditorGUIUtility.AddCursorRect(GUILayoutUtility.GetLastRect(), MouseCursor.Link);
 
@@ -921,13 +922,13 @@ namespace DevLocker.Tools.AssetManagement
 							--i;
 
 							foreach(var otherData in otherList) {
-								if (otherData.Root == found) {
+								if (otherData.Root.Equals(found)) {
 									otherData.Found.Remove(data.Root);
 								}
 							}
 
 							if (!results.Any(d => d.Found.Contains(found))) {
-								otherList.RemoveAll(otherData => otherData.Root == found);
+								otherList.RemoveAll(otherData => otherData.Root.Equals(found));
 							}
 
 							if (data.Found.Count == 0) {
@@ -951,8 +952,8 @@ namespace DevLocker.Tools.AssetManagement
 		private static void DrawReplaceSinglePrefabs(SearchResultData data)
 		{
 			bool showReplaceButton = data.ShowDetails
-									 && data.Root is GameObject
-									 && data.Found.Any(obj => obj is SceneAsset);
+									 && data.Root.IsPrefab
+									 && data.Found.Any(ah => ah.IsScene);
 
 
 			if (showReplaceButton) {
@@ -975,10 +976,10 @@ namespace DevLocker.Tools.AssetManagement
 						}
 					}
 
-					if (data.Root == null)
+					if (!data.Root.Exists())
 						GUIUtility.ExitGUI();
 
-					if (data.ReplacePrefab == data.Root) {
+					if (data.ReplacePrefab == data.Root.ToUnityObject()) {
 						if (!EditorUtility.DisplayDialog("Wut?!", "This is the same prefab! Are you sure?", "Do it!", "Abort"))
 							GUIUtility.ExitGUI();
 					}
@@ -1002,14 +1003,14 @@ namespace DevLocker.Tools.AssetManagement
 					StringBuilder replaceReport = new StringBuilder(300);
 
 					if (data.ReplacePrefab != null) {
-						replaceReport.AppendLine($"Search For: {data.Root.name}; Replace With: {data.ReplacePrefab.name}; Reparent: {reparentChildren}");
+						replaceReport.AppendLine($"Search For: \"{data.Root.Name}\"; Replace With: \"{data.ReplacePrefab.name}\"; Reparent: {reparentChildren}");
 					} else {
-						replaceReport.AppendLine($"Search and delete: {data.Root.name}");
+						replaceReport.AppendLine($"Search and delete: \"{data.Root.Name}\"");
 					}
 
 					ReplaceSinglePrefabResult(data, reparentChildren, replaceReport);
 
-					Debug.Log($"Replace report:\n" + replaceReport, data.Root);
+					Debug.Log($"Replace report:\n" + replaceReport, data.Root.ToUnityObject());
 				}
 
 				EditorGUILayout.EndHorizontal();
@@ -1019,7 +1020,7 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void DrawReplaceAllPrefabs()
 		{
-			bool enableReplaceButton = _currentResults != null && _currentResults.SearchResults.Any(pair => pair.Root is GameObject && pair.Found.Any(obj => obj is SceneAsset));
+			bool enableReplaceButton = _currentResults != null && _currentResults.SearchResults.Any(pair => pair.Root.IsPrefab && pair.Found.Any(ah => ah.IsScene));
 			EditorGUI.BeginDisabledGroup(!enableReplaceButton);
 			if (GUILayout.Button(REPLACE_PREFABS_ALL_BTN, EditorStyles.miniButton, GUILayout.ExpandWidth(false))) {
 
@@ -1107,10 +1108,11 @@ namespace DevLocker.Tools.AssetManagement
 
 		private static void ReplaceSinglePrefabResult(SearchResultData searchResultData, bool reparentChildren, StringBuilder replaceReport)
 		{
-			Debug.Assert(searchResultData.Root);
+			Debug.Assert(searchResultData.Root.Exists());
 
 			var scenes = searchResultData
 					.Found
+					.Select(ah => ah.ToUnityObject())
 					.OfType<SceneAsset>()
 					.ToList()
 				;
@@ -1122,13 +1124,13 @@ namespace DevLocker.Tools.AssetManagement
 		{
 			var resultDataToReplace = searchResult
 				.SearchResults
-				.Where(data => data.Root != null)
+				.Where(data => data.Root.Exists())
 				.Where(data => data.ReplacePrefab != null)
 				.ToList()
 				;
 
 			var scenes = resultDataToReplace
-				.SelectMany(data => data.Found.OfType<SceneAsset>())
+				.SelectMany(data => data.Found.Select(ah => ah.ToUnityObject()).OfType<SceneAsset>())
 				.Distinct()
 				.ToList()
 				;
@@ -1168,7 +1170,7 @@ namespace DevLocker.Tools.AssetManagement
 						var foundPrefab = PrefabUtility.GetPrefabParent(go);
 #endif
 						// If the found prefab matches any of the requested (only prefab roots).
-						var data = resultDataToReplace.FirstOrDefault(d => d.Root == foundPrefab);
+						var data = resultDataToReplace.FirstOrDefault(d => d.Root.ToUnityObject() == foundPrefab);
 						if (data != null) {
 
 							// Store sibling index before reparenting children.
@@ -1207,7 +1209,7 @@ namespace DevLocker.Tools.AssetManagement
 
 
 			foreach (var data in resultDataToReplace) {
-				data.Found.RemoveAll(obj => obj is SceneAsset && scenes.Contains(obj));
+				data.Found.RemoveAll(obj => obj.ToUnityObject() is SceneAsset && scenes.Contains(obj.ToUnityObject()));
 			}
 
 			EditorUtility.ClearProgressBar();
@@ -1297,78 +1299,114 @@ namespace DevLocker.Tools.AssetManagement
 			}
 		}
 
-
-		private static string SerializeReference(Object obj)
+		[Serializable]
+		private struct AssetHandle
 		{
-			AssetDatabase.TryGetGUIDAndLocalFileIdentifier(obj, out string guid, out long localId);
-			return AssetDatabase.IsSubAsset(obj) ? guid + "|" + localId : guid;
-		}
+			public string Guid;
+			public string LocalId;
+			public bool IsSubAsset;
+			public string AssetPath;
+			public string Name;
 
-		private static Object DeserializeReference(string data, out string guid, out long localId)
-		{
-			string[] tokens = data.Split('|', StringSplitOptions.RemoveEmptyEntries);
+			public bool IsPrefab => AssetPath.EndsWith(".prefab");
+			public bool IsScene => AssetPath.EndsWith(".unity");
 
-			if (tokens.Length <= 1) {
-				guid = data;
-				localId = 0;
-				return AssetDatabase.LoadMainAssetAtPath(AssetDatabase.GUIDToAssetPath(data));
+			public AssetHandle(string guid, string localId)
+			{
+				Guid = guid;
+				LocalId = localId;
+				IsSubAsset = !string.IsNullOrEmpty(localId);
+				AssetPath = AssetDatabase.GUIDToAssetPath(guid);
+				Name = Path.GetFileName(AssetPath);
 			}
 
-			guid = tokens[0];
-			localId = long.Parse(tokens[1]);
+			public AssetHandle(Object obj)
+			{
+				IsSubAsset = AssetDatabase.IsSubAsset(obj);
 
-			var subAssets = AssetDatabase.LoadAllAssetRepresentationsAtPath(AssetDatabase.GUIDToAssetPath(guid));
-			foreach (Object subAsset in subAssets) {
-				AssetDatabase.TryGetGUIDAndLocalFileIdentifier(subAsset, out string _, out long subAssetId);
+				AssetDatabase.TryGetGUIDAndLocalFileIdentifier(obj, out string guid, out long localId);
+				Guid = guid;
+				//LocalId = IsSubAsset ? localId.ToString() : "";	// Even main assets have localId that is useable.
+				LocalId = localId.ToString();
 
-				if (localId == subAssetId) {
-					return subAsset;
+				AssetPath = AssetDatabase.GetAssetPath(obj);
+				Name = IsSubAsset ? obj.name : Path.GetFileName(AssetPath);
+
+			}
+
+			public bool Equals(AssetHandle other)
+			{
+				if (ReferenceEquals(this, other))
+					return true;
+
+				if (ReferenceEquals(other, null))
+					return false;
+
+				return Guid == other.Guid
+					&& LocalId == other.LocalId
+					&& IsSubAsset == other.IsSubAsset
+					&& AssetPath == other.AssetPath
+					&& Name == other.Name
+					;
+			}
+
+			public bool Exists() => ToUnityObject() != null;
+
+			public Object ToUnityObject()
+			{
+				if (string.IsNullOrEmpty(Guid))
+					return null;
+
+				if (IsSubAsset) {
+					long localId = long.Parse(LocalId);
+
+					var subAssets = AssetDatabase.LoadAllAssetRepresentationsAtPath(AssetDatabase.GUIDToAssetPath(Guid));
+					foreach (Object subAsset in subAssets) {
+						AssetDatabase.TryGetGUIDAndLocalFileIdentifier(subAsset, out string _, out long subAssetId);
+
+						if (localId == subAssetId) {
+							return subAsset;
+						}
+					}
+
+					return null;
+
+				} else {
+					return AssetDatabase.LoadMainAssetAtPath(AssetDatabase.GUIDToAssetPath(Guid));
 				}
 			}
-
-			return null;
 		}
 
 		[Serializable]
-		private class SearchEntryData : ISerializable
+		private class SearchEntryData
 		{
-			[field: SerializeField] public string TargetText { get; private set; } = "";  // For searching by text.
-			[field: SerializeField] public Object Target { get; private set; }
-
-			[field: SerializeField] public bool IsSubAsset { get; private set; }
-			[field: SerializeField] public string MainAssetPath { get; private set; } = "";
-			[field: SerializeField] public string Guid { get; private set; } = "";
-			[field: SerializeField] public string LocalId { get; private set; } = "";
+			[field: SerializeField] public string TargetText = "";  // For searching by text.
+			[field: SerializeField] public AssetHandle Target;
 
 			public SearchEntryData() { }
 
 			public SearchEntryData(Object target)
 			{
-				Target = target;
-				MainAssetPath = AssetDatabase.GetAssetPath(target);
-				IsSubAsset = AssetDatabase.IsSubAsset(target);
-
-				AssetDatabase.TryGetGUIDAndLocalFileIdentifier(target, out string guid, out long localId);
-				Guid = guid;
+				Target = new AssetHandle(target);
 
 				// LocalId is 102900000 for folders, scenes and unknown asset types. Probably marks this as invalid id.
 				// For unknown asset types, which actually have some localIds inside them (custom made), this will be invalid when linked in places.
 				// Example: Custom generated mesh files that start with "--- !u!43 &4300000" at the top, will actually use 4300000 in the reference when linked somewhere.
-				if (localId != 102900000) {
-					LocalId = localId.ToString();
+				if (Target.LocalId == "102900000") {
+					Target.LocalId = "";
 				}
 
 				// Prefabs don't have localId (or rather it is not used in the scenes at least).
 				// We don't support searching for nested game objects of a prefab.
-				if (Target is GameObject) {
-					LocalId = "";
+				if (target is GameObject) {
+					Target.LocalId = "";
 				}
 			}
 
-			public SearchEntryData(string targetText, SearchReferencesFast targetContext)
+			public SearchEntryData(string targetText)
 			{
 				TargetText = targetText;
-				Target = targetContext;	// We still need some Target to show (so the rest of the code can work).
+				Target = new AssetHandle(AssetDatabase.LoadMainAssetAtPath("Assets"));	// We still need some Target to show (so the rest of the code can work).
 			}
 
 			public bool Equals(SearchEntryData other)
@@ -1380,38 +1418,9 @@ namespace DevLocker.Tools.AssetManagement
 					return false;
 
 				return TargetText.Equals(other.TargetText)
-					&& Target == other.Target
-					&& IsSubAsset.Equals(other.IsSubAsset)
-					&& MainAssetPath.Equals(other.MainAssetPath)
-					&& Guid.Equals(other.Guid)
-					&& LocalId == other.LocalId
+					&& Target.Equals(other.Target)
 					;
 			}
-
-			#region Serialization
-
-			private SearchEntryData(SerializationInfo info, StreamingContext context)
-			{
-				TargetText = info.GetString(nameof(TargetText));
-
-				Target = DeserializeReference(info.GetString(nameof(Target)), out string guid, out long localId);
-
-				IsSubAsset = AssetDatabase.IsSubAsset(Target);
-				MainAssetPath = AssetDatabase.GUIDToAssetPath(Guid);
-
-				Guid = guid;
-				LocalId = IsSubAsset ? localId.ToString() : "";
-			}
-
-
-			public void GetObjectData(SerializationInfo info, StreamingContext context)
-			{
-				info.AddValue(nameof(TargetText), TargetText);
-
-				info.AddValue(nameof(Target), SerializeReference(Target));
-			}
-
-			#endregion
 		}
 
 		[Serializable]
@@ -1458,9 +1467,9 @@ namespace DevLocker.Tools.AssetManagement
 				return SearchFilter.Equals(other.SearchFilter);
 			}
 
-			public bool TryGetValue(Object key, out SearchResultData data)
+			public bool TryGetValue(AssetHandle key, out SearchResultData data)
 			{
-				var index = SearchResults.FindIndex(p => p.Root == key);
+				var index = SearchResults.FindIndex(p => p.Root.Equals(key));
 				if (index == -1) {
 					data = null;
 					return false;
@@ -1471,7 +1480,7 @@ namespace DevLocker.Tools.AssetManagement
 
 			}
 
-			public SearchResultData this[Object searchObjectKey] {
+			public SearchResultData this[AssetHandle searchObjectKey] {
 				get {
 					SearchResultData data;
 					if (!TryGetValue(searchObjectKey, out data)) {
@@ -1481,14 +1490,14 @@ namespace DevLocker.Tools.AssetManagement
 				}
 			}
 
-			public void Add(Object key, SearchResultData data)
+			public void Add(AssetHandle key, SearchResultData data)
 			{
-				if (key == null) {
-					throw new ArgumentNullException("Null key not allowed!");
+				if (string.IsNullOrEmpty(key.Guid)) {
+					throw new ArgumentNullException("Invalid key not allowed!");
 				}
 
-				if (SearchResults.Any(p => p.Root == key)) {
-					throw new ArgumentException($"Key {key.name} already exists!");
+				if (SearchResults.Any(p => p.Root.Equals(key))) {
+					throw new ArgumentException($"Key {key.AssetPath} already exists!");
 				}
 
 				SearchResults.Add(data);
@@ -1501,16 +1510,16 @@ namespace DevLocker.Tools.AssetManagement
 				}
 			}
 
-			public void AddToCombinedList(Object foundObject, Object searchSource)
+			public void AddToCombinedList(AssetHandle foundLocation, AssetHandle searchSource)
 			{
 				foreach(var combinedData in CombinedFoundList) {
-					if (foundObject == combinedData.Root) {
+					if (foundLocation.Equals(combinedData.Root)) {
 						combinedData.Found.Add(searchSource);
 						return;
 					}
 				}
 
-				CombinedFoundList.Add(new SearchResultData() { Root = foundObject });
+				CombinedFoundList.Add(new SearchResultData() { Root = foundLocation });
 				CombinedFoundList.Last().Found.Add(searchSource);
 			}
 		}
@@ -1519,8 +1528,8 @@ namespace DevLocker.Tools.AssetManagement
 		private class SearchResultData : ISerializable
 		{
 			// NOTE: This class is re-used for storing and rendering combined results - searches per result object.
-			public Object Root;
-			public List<Object> Found = new List<Object>(10);
+			public AssetHandle Root;
+			public List<AssetHandle> Found = new List<AssetHandle>(10);
 
 			// GUI
 			public bool ShowDetails = true;
@@ -1528,16 +1537,14 @@ namespace DevLocker.Tools.AssetManagement
 
 
 			#region Serialization
+
 			public SearchResultData()
 			{ }
 
 			private SearchResultData(SerializationInfo info, StreamingContext context)
 			{
-				Root = DeserializeReference(info.GetString(nameof(Root)), out _, out _);
-				var foundReferences = (string[])info.GetValue(nameof(Found), typeof(string[]));
-				Found = foundReferences
-					.Select(r => DeserializeReference(r, out _, out _))
-					.ToList();
+				Root = (AssetHandle) info.GetValue(nameof(Root), typeof(AssetHandle));
+				Found = ((AssetHandle[])info.GetValue(nameof(Found), typeof(AssetHandle[]))).ToList();
 
 				ShowDetails = info.GetBoolean(nameof(ShowDetails));
 				ReplacePrefab = AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GUIDToAssetPath(info.GetString(nameof(ReplacePrefab))));
@@ -1546,12 +1553,13 @@ namespace DevLocker.Tools.AssetManagement
 
 			public void GetObjectData(SerializationInfo info, StreamingContext context)
 			{
-				info.AddValue(nameof(Root), SerializeReference(Root));
-				info.AddValue(nameof(Found), Found.Select(SerializeReference).ToArray());
+				info.AddValue(nameof(Root), Root);
+				info.AddValue(nameof(Found), Found.ToArray());
 
 				info.AddValue(nameof(ShowDetails), ShowDetails);
 				info.AddValue(nameof(ReplacePrefab), AssetDatabase.AssetPathToGUID(AssetDatabase.GetAssetPath(ReplacePrefab)));
 			}
+
 			#endregion
 		}
 
