@@ -48,10 +48,10 @@ namespace DevLocker.Tools.AssetManagement
 		static void Init()
 		{
 			var window = GetWindow<SearchReferencesFast>("Search References");
-			window._searchFilter.SetTemplateEnabled("Scenes", true);
-			window._searchFilter.SetTemplateEnabled("Prefabs", true);
-			window._searchFilter.SetTemplateEnabled("Script Obj", true);
-			window._selectedResultProcessor = 0;
+			window.m_SearchFilter.SetTemplateEnabled("Scenes", true);
+			window.m_SearchFilter.SetTemplateEnabled("Prefabs", true);
+			window.m_SearchFilter.SetTemplateEnabled("Script Obj", true);
+			window.m_SelectedResultProcessor = 0;
 			window.minSize = new Vector2(300, 600f);
 		}
 
@@ -68,24 +68,24 @@ namespace DevLocker.Tools.AssetManagement
 				window.titleContent = titleContent;
 				window.Show();
 
-				window._searchText = _searchText;
-				window._searchMainAssetOnly = _searchMainAssetOnly;
-				window._textToSearch = _textToSearch;
+				window.m_SearchText = m_SearchText;
+				window.m_SearchMainAssetOnly = m_SearchMainAssetOnly;
+				window.m_TextToSearch = m_TextToSearch;
 
-				window._searchMetas = _searchMetas;
-				window._searchFilter = _searchFilter.Clone();
+				window.m_SearchMetas = m_SearchMetas;
+				window.m_SearchFilter = m_SearchFilter.Clone();
 
-				window._searchFilter.RefreshCounters();
+				window.m_SearchFilter.RefreshCounters();
 			}
 		}
 
 		private bool m_ShowPreferences = false;
 		private const string PROJECT_EXCLUDES_PATH = "ProjectSettings/SearchReferencesFast.Exclude.txt";
 
-		private bool _searchText = false;
-		private bool _searchMainAssetOnly = false;
-		private string _textToSearch;
-		private int _selectedResultProcessor;
+		private bool m_SearchText = false;
+		private bool m_SearchMainAssetOnly = false;
+		private string m_TextToSearch;
+		private int m_SelectedResultProcessor;
 
 		private enum SearchMetas
 		{
@@ -106,26 +106,28 @@ namespace DevLocker.Tools.AssetManagement
 			Name,
 		}
 
-		private bool _foldOutSearchCriterias = true;
-		private SearchMetas _searchMetas = SearchMetas.SearchWithMetas;
+		private bool m_FoldOutSearchCriterias = true;
+		private SearchMetas m_SearchMetas = SearchMetas.SearchWithMetas;
 		[SerializeField]
-		private SearchAssetsFilter _searchFilter = new SearchAssetsFilter() { ExcludePackages = true };
+		private SearchAssetsFilter m_SearchFilter = new SearchAssetsFilter() { ExcludePackages = true };
 
-		private string _resultsSearchEntryFilter = "";
-		private string _resultsFoundEntryFilter = "";
+		private string m_ResultsSearchEntryFilter = "";
+		private string m_ResultsFoundEntryFilter = "";
 
-		private SearchResult _currentResults => 0 <= _resultsHistoryIndex && _resultsHistoryIndex < _resultsHistory.Count
-			? _resultsHistory[_resultsHistoryIndex]
-			: _resultsHistory.LastOrDefault()
+		private SearchResult m_CurrentResults => 0 <= m_ResultsHistoryIndex && m_ResultsHistoryIndex < m_ResultsHistory.Count
+			? m_ResultsHistory[m_ResultsHistoryIndex]
+			: m_ResultsHistory.LastOrDefault()
 			;
 
-		private List<SearchResult> _resultsHistory = new List<SearchResult>();
-		private int _resultsHistoryIndex = 0;
+		private List<SearchResult> m_ResultsHistory = new List<SearchResult>();
+		private int m_ResultsHistoryIndex = 0;
 
-		private ResultsViewMode _resultsViewMode;
-		private ResultsPathMode _resultsPathMode;
+		private ResultsViewMode m_ResultsViewMode;
+		private ResultsPathMode m_ResultsPathMode;
 
-		private Vector2 _scrollPos;
+		private bool m_MoreResultsOperations = false;
+
+		private Vector2 m_ScrollPos;
 
 		private static readonly string[] _wellKnownBinaryFileExtensions = new string[] {
 			".fbx",
@@ -165,18 +167,18 @@ namespace DevLocker.Tools.AssetManagement
 
 		void OnEnable()
 		{
-			_searchFilter.RefreshCounters();
+			m_SearchFilter.RefreshCounters();
 
 			if (File.Exists(PROJECT_EXCLUDES_PATH)) {
-				_searchFilter.ExcludePreferences = new List<string>(File.ReadAllLines(PROJECT_EXCLUDES_PATH));
+				m_SearchFilter.ExcludePreferences = new List<string>(File.ReadAllLines(PROJECT_EXCLUDES_PATH));
 			} else {
-				_searchFilter.ExcludePreferences = new List<string>();
+				m_SearchFilter.ExcludePreferences = new List<string>();
 			}
 
-			if (string.IsNullOrWhiteSpace(_searchFilter.SearchFilter)) {
-				_searchFilter.SetTemplateEnabled("Scenes", true);
-				_searchFilter.SetTemplateEnabled("Prefabs", true);
-				_searchFilter.SetTemplateEnabled("Script Obj", true);
+			if (string.IsNullOrWhiteSpace(m_SearchFilter.SearchFilter)) {
+				m_SearchFilter.SetTemplateEnabled("Scenes", true);
+				m_SearchFilter.SetTemplateEnabled("Prefabs", true);
+				m_SearchFilter.SetTemplateEnabled("Script Obj", true);
 			}
 
 			m_SerializedObject = new SerializedObject(this);
@@ -191,25 +193,28 @@ namespace DevLocker.Tools.AssetManagement
 
 		// Sometimes the bold style gets corrupted and displays just black text, for no good reason.
 		// This forces the style to reload on re-creation.
-		[NonSerialized] private static GUIStyle BOLDED_FOLDOUT_STYLE;
-		[NonSerialized] private static GUIStyle COUNT_LABEL_STYLE;
+		[NonSerialized] private static GUIStyle BoldedFoldoutStyle;
+		[NonSerialized] private static GUIStyle CountLabelStyle;
 		[NonSerialized] private static GUIStyle UrlStyle;
 		[NonSerialized] private static GUIStyle SearchedUrlStyle;
 		[NonSerialized] private static GUIStyle FoundedUrlStyle;
 		[NonSerialized] private static GUIStyle ResultIconStyle;
 		[NonSerialized] private static GUIStyle DarkerRowStyle;
-		private static GUIContent RESULTS_SEARCHED_FILTER_LABEL = new GUIContent("Searched Filter", "Filter out results by hiding some search entries.");
-		private static GUIContent RESULTS_FOUND_FILTER_LABEL = new GUIContent("Found Filter", "Filter out results by hiding some found entries (under each search entry).");
-		private static GUIContent REPLACE_PREFABS_ENTRY_BTN = new GUIContent("Replace in scenes", "Replace this searched prefab entry with the specified replacement (on the left) in whichever scene it was found.");
-		private static GUIContent REPLACE_PREFABS_ALL_BTN = new GUIContent("Replace All", "Replace ALL searched prefab entries with the specified replacement (if provided) in whichever scene they were found.");
+		private readonly static GUIContent ResultsSearchedFilterLabel = new GUIContent("Searched Filter", "Filter out results by hiding some search entries.");
+		private readonly static GUIContent ResultsFoundFfilterLabel = new GUIContent("Found Filter", "Filter out results by hiding some found entries (under each search entry).");
+		private readonly static GUIContent ReplacePrefabsEntryButton = new GUIContent("Replace in scenes", "Replace this searched prefab entry with the specified replacement (on the left) in whichever scene it was found.");
+		private readonly static GUIContent ReplacePrefabsAllButton = new GUIContent("Replace All Prefabs", "Replace ALL searched prefab entries with the specified replacement (if provided) in whichever scene they were found.");
+
+		private readonly static GUIContent CorelateButton = new GUIContent("Corelate", "Add new results entry by making corelation between the current and previous results from the history. Use back '<' and forward '>' to preview the result entries.\n\nExample:\n1. Search which shaders are used in which materials\n2. Search those materials in which prefabs are used\n3. Corelate the last two searches so it displays which shaders are used in which prefabs");
+
 
 		private void InitStyles()
 		{
-			BOLDED_FOLDOUT_STYLE = new GUIStyle(EditorStyles.foldout);
-			BOLDED_FOLDOUT_STYLE.fontStyle = FontStyle.Bold;
+			BoldedFoldoutStyle = new GUIStyle(EditorStyles.foldout);
+			BoldedFoldoutStyle.fontStyle = FontStyle.Bold;
 
-			COUNT_LABEL_STYLE = new GUIStyle(EditorStyles.boldLabel);
-			COUNT_LABEL_STYLE.alignment = TextAnchor.MiddleRight;
+			CountLabelStyle = new GUIStyle(EditorStyles.boldLabel);
+			CountLabelStyle.alignment = TextAnchor.MiddleRight;
 
 			UrlStyle = new GUIStyle(GUI.skin.label);
 			UrlStyle.normal.textColor = EditorGUIUtility.isProSkin ? new Color(1.00f, 0.65f, 0.00f) : Color.blue;
@@ -239,7 +244,7 @@ namespace DevLocker.Tools.AssetManagement
 		{
 			m_SerializedObject.Update();
 
-			if (BOLDED_FOLDOUT_STYLE == null) {
+			if (BoldedFoldoutStyle == null) {
 				InitStyles();
 			}
 
@@ -253,17 +258,17 @@ namespace DevLocker.Tools.AssetManagement
 			EditorGUILayout.Space();
 
 			EditorGUILayout.BeginHorizontal();
-			_searchText = EditorGUILayout.Toggle("Search Text", _searchText, GUILayout.ExpandWidth(false));
+			m_SearchText = EditorGUILayout.Toggle("Search Text", m_SearchText, GUILayout.ExpandWidth(false));
 
-			if (!_searchText) {
+			if (!m_SearchText) {
 				GUILayout.FlexibleSpace();
 				var label = new GUIContent("Main Asset GUID Only", "If enabled search will match just the asset GUID instead of GUID + LocalId (used for sub assets).");
-				_searchMainAssetOnly = EditorGUILayout.Toggle(label, _searchMainAssetOnly);
+				m_SearchMainAssetOnly = EditorGUILayout.Toggle(label, m_SearchMainAssetOnly);
 			}
 			EditorGUILayout.EndHorizontal();
 
-			if (_searchText) {
-				_textToSearch = EditorGUILayout.TextField("Text", _textToSearch);
+			if (m_SearchText) {
+				m_TextToSearch = EditorGUILayout.TextField("Text", m_TextToSearch);
 			} else {
 
 				EditorGUI.BeginDisabledGroup(true);
@@ -277,40 +282,40 @@ namespace DevLocker.Tools.AssetManagement
 
 
 
-			_foldOutSearchCriterias = EditorGUILayout.Foldout(_foldOutSearchCriterias, "Search in:", toggleOnLabelClick: true, BOLDED_FOLDOUT_STYLE);
+			m_FoldOutSearchCriterias = EditorGUILayout.Foldout(m_FoldOutSearchCriterias, "Search in:", toggleOnLabelClick: true, BoldedFoldoutStyle);
 
-			if (_foldOutSearchCriterias) {
+			if (m_FoldOutSearchCriterias) {
 				EditorGUILayout.BeginVertical(EditorStyles.helpBox);
 
-				_searchFilter.DrawIncludeExcludeFolders();
+				m_SearchFilter.DrawIncludeExcludeFolders();
 
 
 				EditorGUILayout.Space();
 				EditorGUILayout.BeginHorizontal();
-				_searchMetas = (SearchMetas)EditorGUILayout.EnumPopup("Metas", _searchMetas);
+				m_SearchMetas = (SearchMetas)EditorGUILayout.EnumPopup("Metas", m_SearchMetas);
 				EditorGUILayout.EndHorizontal();
 				EditorGUILayout.Space();
 
-				_searchFilter.DrawTypeFilters(position.width);
+				m_SearchFilter.DrawTypeFilters(position.width);
 
 				EditorGUILayout.EndVertical();
 			}
 
 			EditorGUILayout.BeginHorizontal();
 
-			EditorGUI.BeginDisabledGroup(string.IsNullOrWhiteSpace(_searchFilter.SearchFilter));
+			EditorGUI.BeginDisabledGroup(string.IsNullOrWhiteSpace(m_SearchFilter.SearchFilter));
 			if (GUILayout.Button("Search In Project")) {
 
-				_resultsSearchEntryFilter = string.Empty;
-				_resultsFoundEntryFilter = string.Empty;
+				m_ResultsSearchEntryFilter = string.Empty;
+				m_ResultsFoundEntryFilter = string.Empty;
 
-				if (_searchText) {
-					if (string.IsNullOrWhiteSpace(_textToSearch)) {
+				if (m_SearchText) {
+					if (string.IsNullOrWhiteSpace(m_TextToSearch)) {
 						EditorUtility.DisplayDialog("Invalid Input", "Please enter some valid text to search for.", "Ok");
 						GUIUtility.ExitGUI();
 					}
 
-					PerformTextSearch(_textToSearch);
+					PerformTextSearch(m_TextToSearch);
 					GUIUtility.ExitGUI();
 
 				} else {
@@ -340,7 +345,7 @@ namespace DevLocker.Tools.AssetManagement
 
 			GUILayout.Space(4f);
 
-			if (_currentResults != null) {
+			if (m_CurrentResults != null) {
 				DrawResults();
 			}
 
@@ -398,7 +403,7 @@ namespace DevLocker.Tools.AssetManagement
 			if (targetEntries.Count == 0)
 				return;
 
-			PerformSearchWork(_searchMetas, targetEntries, _searchMainAssetOnly, _searchFilter);
+			PerformSearchWork(m_SearchMetas, targetEntries, m_SearchMainAssetOnly, m_SearchFilter);
 		}
 
 		private void PerformSearchWork(SearchMetas searchMetas, List<SearchEntryData> targetEntries, bool searchMainAssetOnly, SearchAssetsFilter searchFilter)
@@ -432,7 +437,7 @@ namespace DevLocker.Tools.AssetManagement
 
 			// This used to be on demand, but having empty search results is more helpful, then having them missing.
 			foreach (var target in targetEntries) {
-				_currentResults.Add(target.Target, new SearchResultData() { Root = target.Target });
+				m_CurrentResults.Add(target.Target, new SearchResultData() { Root = target.Target });
 			}
 
 			var appDataPath = Application.dataPath;
@@ -498,23 +503,23 @@ namespace DevLocker.Tools.AssetManagement
 						continue;
 					}
 
-					SearchResultData data = _currentResults[searchEntry.Target];
+					SearchResultData data = m_CurrentResults[searchEntry.Target];
 					var foundLocation = new AssetHandle(foundObj);
 					foundLocation.AssetPath = matchPath;
 
 					if (!data.Found.Contains(foundLocation)) {
 						data.Found.Add(foundLocation);
-						_currentResults.TryAddType(foundObj.GetType());
-						_currentResults.AddToCombinedList(foundLocation, data.Root);
+						m_CurrentResults.TryAddType(foundObj.GetType());
+						m_CurrentResults.AddToCombinedList(foundLocation, data.Root);
 					}
 				}
 			}
 
-			foreach (var data in _currentResults.SearchResults) {
+			foreach (var data in m_CurrentResults.SearchResults) {
 				data.Found.Sort((l, r) => String.Compare(l.AssetPath, r.AssetPath, StringComparison.Ordinal));
 			}
 
-			foreach (var data in _currentResults.CombinedFoundList) {
+			foreach (var data in m_CurrentResults.CombinedFoundList) {
 				data.Found.Sort((l, r) => String.Compare(l.AssetPath, r.AssetPath, StringComparison.Ordinal));
 				data.ShowDetails = false;
 			}
@@ -649,7 +654,7 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void PerformTextSearch(string text)
 		{
-			PerformSearchWork(_searchMetas, new List<SearchEntryData>() { new SearchEntryData(text) }, _searchMainAssetOnly, _searchFilter);
+			PerformSearchWork(m_SearchMetas, new List<SearchEntryData>() { new SearchEntryData(text) }, m_SearchMainAssetOnly, m_SearchFilter);
 			return;
 		}
 
@@ -699,7 +704,7 @@ namespace DevLocker.Tools.AssetManagement
 				GUILayout.Label("", GUI.skin.horizontalSlider);
 
 				if (GUILayout.Button(new GUIContent("X", "Clear all results"), EditorStyles.label, GUILayout.ExpandWidth(false))) {
-					_resultsHistory.Clear();
+					m_ResultsHistory.Clear();
 					GUIUtility.ExitGUI();
 				}
 			}
@@ -711,70 +716,46 @@ namespace DevLocker.Tools.AssetManagement
 			{
 				EditorGUILayout.LabelField("Saved Search Results", GUILayout.Width(EditorGUIUtility.labelWidth - 2f));
 				DrawSaveResultsSlots();
-
-				GUILayout.FlexibleSpace();
-
-				if (ResultProcessors.Count > 0) {
-					string[] processorNames = ResultProcessors.Select(rp => rp.Name).ToArray();
-
-					_selectedResultProcessor = EditorGUILayout.Popup(_selectedResultProcessor, processorNames, GUILayout.Width(150));
-
-					if (GUILayout.Button(EditorGUIUtility.IconContent("PlayButton"), GUILayout.ExpandWidth(false)) && _currentResults != null) {
-						var results = _currentResults.SearchResults
-							.Where(
-								rd => rd.Root.Exists() &&
-									  (string.IsNullOrEmpty(_resultsSearchEntryFilter) ||
-									   rd.Root.Name.IndexOf(_resultsSearchEntryFilter, StringComparison.OrdinalIgnoreCase) !=
-									   -1))
-							.SelectMany(rd => rd.Found.Select(f => f.ToUnityObject()))
-							.Where(
-								obj => obj != null &&
-									  (string.IsNullOrEmpty(_resultsFoundEntryFilter) ||
-									   obj.name.IndexOf(_resultsFoundEntryFilter, StringComparison.OrdinalIgnoreCase) != -1));
-
-						ResultProcessors[_selectedResultProcessor].ProcessResults(results);
-					}
-				}
 			}
 			EditorGUILayout.EndHorizontal();
 
 			EditorGUILayout.BeginHorizontal();
 			{
-				_resultsViewMode = (ResultsViewMode)EditorGUILayout.EnumPopup("Display Modes", _resultsViewMode, GUILayout.ExpandWidth(true));
-				_resultsPathMode = (ResultsPathMode)EditorGUILayout.EnumPopup(_resultsPathMode, GUILayout.MaxWidth(75f));
+				m_ResultsViewMode = (ResultsViewMode)EditorGUILayout.EnumPopup("Display Modes", m_ResultsViewMode, GUILayout.ExpandWidth(true));
+				m_ResultsPathMode = (ResultsPathMode)EditorGUILayout.EnumPopup(m_ResultsPathMode, GUILayout.MaxWidth(75f));
 			}
 			EditorGUILayout.EndHorizontal();
 
-			_resultsSearchEntryFilter = EditorGUILayout.TextField(RESULTS_SEARCHED_FILTER_LABEL, _resultsSearchEntryFilter);
-			_resultsFoundEntryFilter = EditorGUILayout.TextField(RESULTS_FOUND_FILTER_LABEL, _resultsFoundEntryFilter);
+			m_ResultsSearchEntryFilter = EditorGUILayout.TextField(ResultsSearchedFilterLabel, m_ResultsSearchEntryFilter);
+			m_ResultsFoundEntryFilter = EditorGUILayout.TextField(ResultsFoundFfilterLabel, m_ResultsFoundEntryFilter);
 
 			EditorGUILayout.BeginHorizontal();
 			{
-				EditorGUI.BeginDisabledGroup(_resultsHistoryIndex <= 0);
+				EditorGUI.BeginDisabledGroup(m_ResultsHistoryIndex <= 0);
 				if (GUILayout.Button("<", EditorStyles.miniButtonLeft, GUILayout.MaxWidth(20f))) {
 					SelectPreviousResults();
 				}
 				EditorGUI.EndDisabledGroup();
 
-				EditorGUI.BeginDisabledGroup(_resultsHistory.Count == 0);
+				EditorGUI.BeginDisabledGroup(m_ResultsHistory.Count == 0);
 				if (GUILayout.Button(new GUIContent("X", "Remove displayed results from history"), EditorStyles.miniButtonMid, GUILayout.MaxWidth(13f))) {
 					if (EditorUtility.DisplayDialog("Remove Results?", "Are you sure you want to remove currently displayed results from the history?", "Yes", "No")) {
-						_resultsHistory.RemoveAt(_resultsHistoryIndex);
-						_resultsHistoryIndex = Mathf.Clamp(_resultsHistoryIndex, 0, _resultsHistory.Count);
+						m_ResultsHistory.RemoveAt(m_ResultsHistoryIndex);
+						m_ResultsHistoryIndex = Mathf.Clamp(m_ResultsHistoryIndex, 0, m_ResultsHistory.Count - 1);
 					}
 				}
 				EditorGUI.EndDisabledGroup();
 
-				EditorGUI.BeginDisabledGroup(_resultsHistoryIndex >= _resultsHistory.Count - 1);
+				EditorGUI.BeginDisabledGroup(m_ResultsHistoryIndex >= m_ResultsHistory.Count - 1);
 				if (GUILayout.Button(">", EditorStyles.miniButtonRight, GUILayout.MaxWidth(20f))) {
 					SelectNextResults();
 				}
 				EditorGUI.EndDisabledGroup();
 
-				if (GUILayout.Button(new GUIContent("Toggle", "Toggle collaps or expand of all the results."), EditorStyles.miniButton, GUILayout.ExpandWidth(false)) && _currentResults != null) {
-					List<SearchResultData> data = _resultsViewMode switch {
-						ResultsViewMode.SearchResults => data = _currentResults.SearchResults,
-						ResultsViewMode.CombinedFoundList => data = _currentResults.CombinedFoundList,
+				if (GUILayout.Button(new GUIContent("Toggle", "Toggle collaps or expand of all the results."), EditorStyles.miniButton, GUILayout.ExpandWidth(false)) && m_CurrentResults != null) {
+					List<SearchResultData> data = m_ResultsViewMode switch {
+						ResultsViewMode.SearchResults => data = m_CurrentResults.SearchResults,
+						ResultsViewMode.CombinedFoundList => data = m_CurrentResults.CombinedFoundList,
 						_ => throw new NotImplementedException(),
 					};
 
@@ -784,40 +765,45 @@ namespace DevLocker.Tools.AssetManagement
 					}
 				}
 
-				EditorGUI.BeginDisabledGroup(_currentResults == null || _currentResults.SearchTargetEntries.Length == 0);
+				EditorGUI.BeginDisabledGroup(m_CurrentResults == null || m_CurrentResults.SearchTargetEntries.Length == 0);
 				if (GUILayout.Button(new GUIContent("Retry Search", "Retry same search that results were produced from"), EditorStyles.miniButton, GUILayout.ExpandWidth(false))) {
-					PerformSearchWork(_currentResults.SearchMetas, _currentResults.SearchTargetEntries.ToList(), _currentResults.SearchMainAssetOnly, _currentResults.SearchFilter);
+					PerformSearchWork(m_CurrentResults.SearchMetas, m_CurrentResults.SearchTargetEntries.ToList(), m_CurrentResults.SearchMainAssetOnly, m_CurrentResults.SearchFilter);
 				}
 				EditorGUI.EndDisabledGroup();
 
-				if (_resultsViewMode == ResultsViewMode.SearchResults) {
-					DrawReplaceAllPrefabs();
+				Color prevBackgroundColor = GUI.backgroundColor;
+				GUI.backgroundColor = m_MoreResultsOperations ? Color.green : GUI.backgroundColor;
+
+				if (GUILayout.Button("More...", EditorStyles.miniButton)) {
+					m_MoreResultsOperations = !m_MoreResultsOperations;
 				}
+
+				GUI.backgroundColor = prevBackgroundColor;
 
 				GUILayout.FlexibleSpace();
 
 
 				var selectList = new List<string>();
 				selectList.Add("Select From Results...");
-				selectList.AddRange(_currentResults?.ResultTypesNames.Select(typeName => $"Found {typeName} Assets") ?? Enumerable.Empty<string>());
+				selectList.AddRange(m_CurrentResults?.ResultTypesNames.Select(typeName => $"Found {typeName} Assets") ?? Enumerable.Empty<string>());
 				selectList.Add("All Found");
 				selectList.Add("Initial Searched Assets");
 
 				var index = EditorGUILayout.Popup(0, selectList.ToArray());
 
-				if (_currentResults != null) {
+				if (m_CurrentResults != null) {
 
 					if (index == selectList.Count - 1) { // Appended "Initial Searched Assets"
-						Selection.objects = _currentResults.SearchResults.Select(data => data.Root.ToUnityObject()).ToArray();
+						Selection.objects = m_CurrentResults.SearchResults.Select(data => data.Root.ToUnityObject()).ToArray();
 
 					} else if (index == selectList.Count - 2) { // Appended "All"
-						Selection.objects = _currentResults.SearchResults.SelectMany(data => data.Found.Select(f => f.ToUnityObject())).Distinct().ToArray();
+						Selection.objects = m_CurrentResults.SearchResults.SelectMany(data => data.Found.Select(f => f.ToUnityObject())).Distinct().ToArray();
 
-					} else if (_currentResults.ResultTypesNames.Count > 0 && index >= 1) {
+					} else if (m_CurrentResults.ResultTypesNames.Count > 0 && index >= 1) {
 						index--;    // Exclude prepended string.
-						var selectedType = _currentResults.ResultTypesNames[index];
+						var selectedType = m_CurrentResults.ResultTypesNames[index];
 
-						Selection.objects = _currentResults.SearchResults
+						Selection.objects = m_CurrentResults.SearchResults
 							.SelectMany(pair => pair.Found.Select(f => f.ToUnityObject()))
 							.Where(obj => obj.GetType().Name == selectedType)
 							.ToArray();
@@ -826,14 +812,17 @@ namespace DevLocker.Tools.AssetManagement
 			}
 			EditorGUILayout.EndHorizontal();
 
+			if (m_MoreResultsOperations) {
+				DrawMoreResultsOperation();
+			}
 
 			EditorGUILayout.BeginVertical();
-			_scrollPos = EditorGUILayout.BeginScrollView(_scrollPos, false, false);
+			m_ScrollPos = EditorGUILayout.BeginScrollView(m_ScrollPos, false, false);
 
-			if (_currentResults != null) {
-				switch (_resultsViewMode) {
-					case ResultsViewMode.SearchResults: DrawResultsData(_currentResults.SearchResults, _currentResults.CombinedFoundList, _resultsSearchEntryFilter, _resultsFoundEntryFilter, SearchedUrlStyle, FoundedUrlStyle, _resultsPathMode, showRootIcons: false, showReplaceTool: true); break;
-					case ResultsViewMode.CombinedFoundList: DrawResultsData(_currentResults.CombinedFoundList, _currentResults.SearchResults, _resultsFoundEntryFilter, _resultsSearchEntryFilter, FoundedUrlStyle, SearchedUrlStyle, _resultsPathMode, showRootIcons: true, showReplaceTool: false); break;
+			if (m_CurrentResults != null) {
+				switch (m_ResultsViewMode) {
+					case ResultsViewMode.SearchResults: DrawResultsData(m_CurrentResults.SearchResults, m_CurrentResults.CombinedFoundList, m_ResultsSearchEntryFilter, m_ResultsFoundEntryFilter, SearchedUrlStyle, FoundedUrlStyle, m_ResultsPathMode, showRootIcons: false, showReplaceTool: true); break;
+					case ResultsViewMode.CombinedFoundList: DrawResultsData(m_CurrentResults.CombinedFoundList, m_CurrentResults.SearchResults, m_ResultsFoundEntryFilter, m_ResultsSearchEntryFilter, FoundedUrlStyle, SearchedUrlStyle, m_ResultsPathMode, showRootIcons: true, showReplaceTool: false); break;
 				}
 			}
 
@@ -880,7 +869,7 @@ namespace DevLocker.Tools.AssetManagement
 				}
 				EditorGUIUtility.AddCursorRect(GUILayoutUtility.GetLastRect(), MouseCursor.Link);
 
-				EditorGUILayout.LabelField(data.Found.Count.ToString(), COUNT_LABEL_STYLE, GUILayout.MinWidth(20f));
+				EditorGUILayout.LabelField(data.Found.Count.ToString(), CountLabelStyle, GUILayout.MinWidth(20f));
 
 				if (GUILayout.Button(new GUIContent("X", "Remove entry from list"), GUILayout.Width(20.0f), GUILayout.Height(16.0f))) {
 					results.RemoveAt(resultIndex);
@@ -983,7 +972,7 @@ namespace DevLocker.Tools.AssetManagement
 				data.ReplacePrefab = (GameObject)EditorGUILayout.ObjectField(data.ReplacePrefab, typeof(GameObject), false);
 				EditorGUILayout.LabelField(">>", GUILayout.Width(22f));
 
-				if (GUILayout.Button(REPLACE_PREFABS_ENTRY_BTN, GUILayout.ExpandWidth(false))) {
+				if (GUILayout.Button(ReplacePrefabsEntryButton, GUILayout.ExpandWidth(false))) {
 					if (data.ReplacePrefab == null) {
 						if (!EditorUtility.DisplayDialog(
 							"Delete Prefab Instances",
@@ -1034,12 +1023,83 @@ namespace DevLocker.Tools.AssetManagement
 			}
 		}
 
+		private void DrawMoreResultsOperation()
+		{
+			EditorGUILayout.BeginHorizontal();
+
+			EditorGUI.BeginDisabledGroup(m_ResultsHistoryIndex < 1);
+
+			if (GUILayout.Button(CorelateButton, EditorStyles.miniButton)) {
+				SearchResult startResults = m_CurrentResults;
+				SearchResult endResults = m_ResultsHistory[m_ResultsHistoryIndex - 1];
+
+				AddNewResultsEntry(new SearchResult());
+
+				foreach (var target in endResults.SearchResults) {
+					m_CurrentResults.Add(target.Root, new SearchResultData() { Root = target.Root });
+				}
+
+				foreach (AssetHandle startFoundAsset in startResults.SearchResults.SelectMany(sr => sr.Found)) {
+					string[] dependencies = AssetDatabase.GetDependencies(startFoundAsset.AssetPath);
+
+					foreach (string dependencyPath in dependencies) {
+						var searchResult = m_CurrentResults.SearchResults.FirstOrDefault(sr => sr.Root.AssetPath == dependencyPath);
+						if (searchResult != null && !searchResult.Found.Contains(startFoundAsset)) {
+							searchResult.Found.Add(startFoundAsset);
+						}
+					}
+				}
+
+				foreach(var result in m_CurrentResults.SearchResults) {
+					foreach(var found in result.Found) {
+						var obj = found.ToUnityObject();
+						if (obj) {
+							m_CurrentResults.TryAddType(obj.GetType());
+						}
+
+						m_CurrentResults.AddToCombinedList(found, result.Root);
+					}
+				}
+			}
+
+			EditorGUI.EndDisabledGroup();
+
+			if (m_ResultsViewMode == ResultsViewMode.SearchResults) {
+				DrawReplaceAllPrefabs();
+			}
+
+			GUILayout.FlexibleSpace();
+
+			if (ResultProcessors.Count > 0) {
+				string[] processorNames = ResultProcessors.Select(rp => rp.Name).ToArray();
+
+				m_SelectedResultProcessor = EditorGUILayout.Popup(m_SelectedResultProcessor, processorNames, GUILayout.Width(150));
+
+				if (GUILayout.Button(EditorGUIUtility.IconContent("PlayButton"), GUILayout.ExpandWidth(false)) && m_CurrentResults != null) {
+					var results = m_CurrentResults.SearchResults
+						.Where(
+							rd => rd.Root.Exists() &&
+								  (string.IsNullOrEmpty(m_ResultsSearchEntryFilter) ||
+								   rd.Root.Name.IndexOf(m_ResultsSearchEntryFilter, StringComparison.OrdinalIgnoreCase) !=
+								   -1))
+						.SelectMany(rd => rd.Found.Select(f => f.ToUnityObject()))
+						.Where(
+							obj => obj != null &&
+								  (string.IsNullOrEmpty(m_ResultsFoundEntryFilter) ||
+								   obj.name.IndexOf(m_ResultsFoundEntryFilter, StringComparison.OrdinalIgnoreCase) != -1));
+
+					ResultProcessors[m_SelectedResultProcessor].ProcessResults(results);
+				}
+			}
+
+			EditorGUILayout.EndHorizontal();
+		}
 
 		private void DrawReplaceAllPrefabs()
 		{
-			bool enableReplaceButton = _currentResults != null && _currentResults.SearchResults.Any(pair => pair.Root.IsPrefab && pair.Found.Any(ah => ah.IsScene));
+			bool enableReplaceButton = m_CurrentResults != null && m_CurrentResults.SearchResults.Any(pair => pair.Root.IsPrefab && pair.Found.Any(ah => ah.IsScene));
 			EditorGUI.BeginDisabledGroup(!enableReplaceButton);
-			if (GUILayout.Button(REPLACE_PREFABS_ALL_BTN, EditorStyles.miniButton, GUILayout.ExpandWidth(false))) {
+			if (GUILayout.Button(ReplacePrefabsAllButton, EditorStyles.miniButton, GUILayout.ExpandWidth(false))) {
 
 				var option = EditorUtility.DisplayDialogComplex("Reparent objects?",
 					"If prefab has other game objects attached to its children, what should I do with them?",
@@ -1061,7 +1121,7 @@ namespace DevLocker.Tools.AssetManagement
 
 				StringBuilder replaceReport = new StringBuilder(300);
 				replaceReport.AppendLine($"Mass replace started! Reparent: {option == 0}");
-				ReplaceAllPrefabResults(_currentResults, option == 0, replaceReport);
+				ReplaceAllPrefabResults(m_CurrentResults, option == 0, replaceReport);
 
 				Debug.Log($"Replace report:\n" + replaceReport);
 			}
@@ -1093,7 +1153,7 @@ namespace DevLocker.Tools.AssetManagement
 							var serializer = new BinaryFormatter();
 
 							using (FileStream fileStream = File.Open(GetSaveSlothPath(i), FileMode.OpenOrCreate)) {
-								serializer.Serialize(fileStream, _currentResults);
+								serializer.Serialize(fileStream, m_CurrentResults);
 							}
 
 							break;
@@ -1236,26 +1296,28 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void AddNewResultsEntry(SearchResult results)
 		{
-			_resultsHistory.RemoveAll(sr => sr.EqualSearchTargets(results));
-
-			_resultsHistory.Add(results);
-			if (_resultsHistory.Count > 30) {
-				_resultsHistory.RemoveAt(0);
+			if (results.SearchTargetEntries.Length > 0) {
+				m_ResultsHistory.RemoveAll(sr => sr.EqualSearchTargets(results));
 			}
-			_resultsHistoryIndex = _resultsHistory.Count - 1;
+
+			m_ResultsHistory.Add(results);
+			if (m_ResultsHistory.Count > 30) {
+				m_ResultsHistory.RemoveAt(0);
+			}
+			m_ResultsHistoryIndex = m_ResultsHistory.Count - 1;
 		}
 
 		private void SelectPreviousResults()
 		{
-			if (_resultsHistoryIndex >= 0) {
-				_resultsHistoryIndex--;
+			if (m_ResultsHistoryIndex >= 0) {
+				m_ResultsHistoryIndex--;
 			}
 		}
 
 		private void SelectNextResults()
 		{
-			if (_resultsHistoryIndex < _resultsHistory.Count - 1) {
-				_resultsHistoryIndex++;
+			if (m_ResultsHistoryIndex < m_ResultsHistory.Count - 1) {
+				m_ResultsHistoryIndex++;
 			}
 		}
 
@@ -1308,9 +1370,9 @@ namespace DevLocker.Tools.AssetManagement
 			EditorGUILayout.EndScrollView();
 
 			if (GUILayout.Button("Done", GUILayout.ExpandWidth(false))) {
-				_searchFilter.ExcludePreferences.RemoveAll(string.IsNullOrWhiteSpace);
+				m_SearchFilter.ExcludePreferences.RemoveAll(string.IsNullOrWhiteSpace);
 
-				File.WriteAllLines(PROJECT_EXCLUDES_PATH, _searchFilter.ExcludePreferences);
+				File.WriteAllLines(PROJECT_EXCLUDES_PATH, m_SearchFilter.ExcludePreferences);
 				GUI.FocusControl("");
 				m_ShowPreferences = false;
 			}
