@@ -1363,7 +1363,7 @@ namespace DevLocker.Tools.AssetManagement
 
 			m_PreferencesScroll = EditorGUILayout.BeginScrollView(m_PreferencesScroll, GUILayout.ExpandHeight(false));
 
-			var sp = m_SerializedObject.FindProperty("_searchFilter").FindPropertyRelative("ExcludePreferences");
+			var sp = m_SerializedObject.FindProperty(nameof(m_SearchFilter)).FindPropertyRelative("ExcludePreferences");
 
 			EditorGUILayout.PropertyField(sp, new GUIContent("Exclude paths or file names for this project:"), true);
 
