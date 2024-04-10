@@ -18,25 +18,38 @@ namespace DevLocker.Tools.AssetManagement
 	[Serializable]
 	public class SearchAssetsFilter : ISerializable
 	{
-		[Serializable]
-		private class GUISearchTemplate
+		public enum SearchFilterType
 		{
-			public string Name;
+			Scenes,
+			Prefabs,
+			ScriptObj,
+			Models,
+			Materials,
+			Textures,
+			Animations,
+			Animators,
+			Timelines,
+		}
+
+		[Serializable]
+		private class GUISearchFilter
+		{
+			public SearchFilterType FilterType;
 			public string Hint;
 			public string Filter;
 			public int Count;
 
-			public GUISearchTemplate() {}
+			public GUISearchFilter() {}
 
-			public GUISearchTemplate(string name, string searchFilter)
+			public GUISearchFilter(SearchFilterType searchFilterType, string searchFilter)
 			{
-				Name = name;
+				FilterType = searchFilterType;
 				Filter = searchFilter;
 			}
 
-			public GUISearchTemplate Clone()
+			public GUISearchFilter Clone()
 			{
-				var clone = new GUISearchTemplate(Name, Filter);
+				var clone = new GUISearchFilter(FilterType, Filter);
 				clone.Hint = Hint;
 				clone.Count = Count;
 
@@ -81,30 +94,32 @@ namespace DevLocker.Tools.AssetManagement
 			}
 		}
 
-		private bool _includeFoldout = false;
-		private string _includeFolders = "";
+		private bool m_IncludeFoldout = false;
+		private string m_IncludeFolders = "";
 
-		private bool _excludeFoldout = false;
-		private string _excludeFolders = "";
+		private bool m_ExcludeFoldout = false;
+		private string m_ExcludeFolders = "";
 
 		private static GUIStyle DragDropZoneStyle = null;
 
 		public bool ExcludePackages;
 		public List<string> ExcludePreferences = new List<string>();
 
-		private string _searchFilter = "";
-		public string SearchFilter => _searchFilter;
-		private List<GUISearchTemplate> _searchTemplates = new List<GUISearchTemplate>()
+		private string m_SearchFilter = "";
+		public string SearchFilter => m_SearchFilter;
+		public List<SearchFilterType> HideSearchFilters = new List<SearchFilterType>();
+
+		private List<GUISearchFilter> m_SearchFilterTypes = new List<GUISearchFilter>()
 		{
-			new GUISearchTemplate("Scenes", "t:Scene"),
-			new GUISearchTemplate("Prefabs", "t:Prefab"),
-			new GUISearchTemplate("Script Obj", "t:ScriptableObject") { Hint = "Scriptable Objects" },
-			new GUISearchTemplate("Models", "t:Model"),
-			new GUISearchTemplate("Materials", "t:Material"),
-			new GUISearchTemplate("Textures", "t:Texture"),
-			new GUISearchTemplate("Animations", "t:Animation"),
-			new GUISearchTemplate("Animators", "t:AnimatorController t:AnimatorOverrideController"),
-			new GUISearchTemplate("Timelines", "t:TimelineAsset"),
+			new GUISearchFilter(SearchFilterType.Scenes, "t:Scene"),
+			new GUISearchFilter(SearchFilterType.Prefabs, "t:Prefab"),
+			new GUISearchFilter(SearchFilterType.ScriptObj, "t:ScriptableObject") { Hint = "Scriptable Objects" },
+			new GUISearchFilter(SearchFilterType.Models, "t:Model"),
+			new GUISearchFilter(SearchFilterType.Materials, "t:Material"),
+			new GUISearchFilter(SearchFilterType.Textures, "t:Texture"),
+			new GUISearchFilter(SearchFilterType.Animations, "t:Animation"),
+			new GUISearchFilter(SearchFilterType.Animators, "t:AnimatorController t:AnimatorOverrideController"),
+			new GUISearchFilter(SearchFilterType.Timelines, "t:TimelineAsset"),
 		};
 
 		public SearchAssetsFilter() { }
@@ -113,58 +128,67 @@ namespace DevLocker.Tools.AssetManagement
 
 		private SearchAssetsFilter(SerializationInfo info, StreamingContext context)
 		{
-			_includeFoldout = info.GetBoolean(nameof(_includeFoldout));
-			_includeFolders = info.GetString(nameof(_includeFolders));
+			m_IncludeFoldout = info.GetBoolean(nameof(m_IncludeFoldout));
+			m_IncludeFolders = info.GetString(nameof(m_IncludeFolders));
 
-			_excludeFoldout = info.GetBoolean(nameof(_excludeFoldout));
-			_excludeFolders = info.GetString(nameof(_excludeFolders));
+			m_ExcludeFoldout = info.GetBoolean(nameof(m_ExcludeFoldout));
+			m_ExcludeFolders = info.GetString(nameof(m_ExcludeFolders));
 
 			ExcludePackages = info.GetBoolean(nameof(ExcludePackages));
 			ExcludePreferences = (List<string>) info.GetValue(nameof(ExcludePreferences), typeof(List<string>));
 
-			_searchFilter = info.GetString(nameof(_searchFilter));
+			m_SearchFilter = info.GetString(nameof(m_SearchFilter));
 		}
 
 
 		public void GetObjectData(SerializationInfo info, StreamingContext context)
 		{
-			info.AddValue(nameof(_includeFoldout), _includeFoldout);
-			info.AddValue(nameof(_includeFolders), _includeFolders);
+			info.AddValue(nameof(m_IncludeFoldout), m_IncludeFoldout);
+			info.AddValue(nameof(m_IncludeFolders), m_IncludeFolders);
 
-			info.AddValue(nameof(_excludeFoldout), _excludeFoldout);
-			info.AddValue(nameof(_excludeFolders), _excludeFolders);
+			info.AddValue(nameof(m_ExcludeFoldout), m_ExcludeFoldout);
+			info.AddValue(nameof(m_ExcludeFolders), m_ExcludeFolders);
 
 			info.AddValue(nameof(ExcludePackages), ExcludePackages);
 			info.AddValue(nameof(ExcludePreferences), ExcludePreferences);
 
-			info.AddValue(nameof(_searchFilter), _searchFilter);
+			info.AddValue(nameof(m_SearchFilter), m_SearchFilter);
 		}
 
 		#endregion
 
-		public void SetTemplateEnabled(string label, bool enable)
+		public void SetSearchFilterType(SearchFilterType searchFilterType, bool enable)
 		{
-			var template =_searchTemplates.First(t => t.Name == label);
-			template.ApplyToSearchFilter(ref _searchFilter, enable);
+			var filterType = m_SearchFilterTypes.First(t => t.FilterType == searchFilterType);
+			filterType.ApplyToSearchFilter(ref m_SearchFilter, enable);
 
-			RefreshSearchTemplatesOrder();
+			RefreshSearchFilterTypesOrder();
+		}
+
+		public void ClearSearchFilterTypes()
+		{
+			foreach(var filterType in m_SearchFilterTypes) {
+				filterType.ApplyToSearchFilter(ref m_SearchFilter, false);
+			}
+
+			RefreshSearchFilterTypesOrder();
 		}
 
 		public SearchAssetsFilter Clone()
 		{
 			var clone = new SearchAssetsFilter();
 
-			clone._searchFilter = _searchFilter;
-			clone._searchTemplates.Clear();
-			clone._searchTemplates.AddRange(_searchTemplates.Select(t => t.Clone()));
-			clone.RefreshSearchTemplatesOrder(); // Just in case.
+			clone.m_SearchFilter = m_SearchFilter;
+			clone.m_SearchFilterTypes.Clear();
+			clone.m_SearchFilterTypes.AddRange(m_SearchFilterTypes.Select(t => t.Clone()));
+			clone.RefreshSearchFilterTypesOrder(); // Just in case.
 
 			clone.ExcludePackages = ExcludePackages;
 			clone.ExcludePreferences = new List<string>(ExcludePreferences);
-			clone._includeFoldout = _includeFoldout;
-			clone._includeFolders = _includeFolders;
-			clone._excludeFoldout = _excludeFoldout;
-			clone._excludeFolders = _excludeFolders;
+			clone.m_IncludeFoldout = m_IncludeFoldout;
+			clone.m_IncludeFolders = m_IncludeFolders;
+			clone.m_ExcludeFoldout = m_ExcludeFoldout;
+			clone.m_ExcludeFolders = m_ExcludeFolders;
 
 			return clone;
 		}
@@ -177,13 +201,13 @@ namespace DevLocker.Tools.AssetManagement
 			if (ReferenceEquals(other, null))
 				return false;
 
-			return _searchFilter.Equals(other._searchFilter)
+			return m_SearchFilter.Equals(other.m_SearchFilter)
 				&& ExcludePackages.Equals(other.ExcludePackages)
 				&& ExcludePreferences.SequenceEqual(other.ExcludePreferences)
-				&& _includeFoldout.Equals(other._includeFoldout)
-				&& _includeFolders.Equals(other._includeFolders)
-				&& _excludeFoldout.Equals(other._excludeFoldout)
-				&& _excludeFolders.Equals(other._excludeFolders)
+				&& m_IncludeFoldout.Equals(other.m_IncludeFoldout)
+				&& m_IncludeFolders.Equals(other.m_IncludeFolders)
+				&& m_ExcludeFoldout.Equals(other.m_ExcludeFoldout)
+				&& m_ExcludeFolders.Equals(other.m_ExcludeFolders)
 				;
 		}
 
@@ -237,56 +261,67 @@ namespace DevLocker.Tools.AssetManagement
 
 		public void DrawIncludeExcludeFolders()
 		{
-			DrawFoldersFilter("Include folders", ref _includeFoldout, ref _includeFolders, GetIncludeFolders());
-			DrawFoldersFilter("Exclude folders", ref _excludeFoldout, ref _excludeFolders, GetExcludeFolders());
+			DrawFoldersFilter("Include folders", ref m_IncludeFoldout, ref m_IncludeFolders, GetIncludeFolders());
+			DrawFoldersFilter("Exclude folders", ref m_ExcludeFoldout, ref m_ExcludeFolders, GetExcludeFolders());
+		}
+
+		public void DrawFiltersField()
+		{
+			m_SearchFilter = EditorGUILayout.TextField(new GUIContent("Search Filter", "What assets to search for. Same as searching in the project window.\nUse type filters below or type in your own criteria."), m_SearchFilter);
 		}
 
 		public void DrawTypeFilters(float totalWidth)
 		{
-			_searchFilter = EditorGUILayout.TextField(new GUIContent("Search Filter", "What assets to search for. Same as searching in the project window.\nUse type filters below or type in your own criteria."), _searchFilter);
-
 			const float filterButtonWidth = 120f;
 			int columnsCount = Mathf.Max(1, (int) (totalWidth / filterButtonWidth));
+			int skipped = 0;
 
-			for (int i = 0; i < _searchTemplates.Count; i++) {
-				if (i % columnsCount == 0) {
+			for (int i = 0; i < m_SearchFilterTypes.Count; i++) {
+				GUISearchFilter searchFilterType = m_SearchFilterTypes[i];
+				if (HideSearchFilters.Contains(searchFilterType.FilterType)) {
+					skipped++;
+					continue;
+				}
+
+				int displayIndex = i - skipped;
+
+				if (displayIndex % columnsCount == 0) {
 					EditorGUILayout.BeginHorizontal();
 				}
 
-				GUISearchTemplate template = _searchTemplates[i];
-				bool templateEnabled = template.IsEnabled(_searchFilter);
+				bool searchFilterTypeEnabled = searchFilterType.IsEnabled(m_SearchFilter);
 
 				Color prevBackgroundColor = GUI.backgroundColor;
-				if (templateEnabled) {
+				if (searchFilterTypeEnabled) {
 					GUI.backgroundColor = Color.green;
 				}
 
-				if (GUILayout.Button(new GUIContent($"{template.Name} ({template.Count})", template.Hint), GUILayout.MaxWidth(filterButtonWidth))) {
-					template.ApplyToSearchFilter(ref _searchFilter, !templateEnabled);
-					RefreshSearchTemplatesOrder();
+				if (GUILayout.Button(new GUIContent($"{ObjectNames.NicifyVariableName(searchFilterType.FilterType.ToString())} ({searchFilterType.Count})", searchFilterType.Hint), GUILayout.MaxWidth(filterButtonWidth))) {
+					searchFilterType.ApplyToSearchFilter(ref m_SearchFilter, !searchFilterTypeEnabled);
+					RefreshSearchFilterTypesOrder();
 					GUI.FocusControl("");
 				}
 
 				GUI.backgroundColor = prevBackgroundColor;
 
-				if (i % columnsCount == columnsCount - 1) {
+				if (displayIndex % columnsCount == columnsCount - 1) {
 					EditorGUILayout.EndHorizontal();
 				}
 			}
 
-			if ((_searchTemplates.Count - 1) % columnsCount != columnsCount - 1) {
+			if ((m_SearchFilterTypes.Count - skipped - 1) % columnsCount != columnsCount - 1) {
 				EditorGUILayout.EndHorizontal();
 			}
 		}
 
 		public string[] GetIncludeFolders()
 		{
-			return _includeFolders.Split(";\n".ToCharArray(), StringSplitOptions.RemoveEmptyEntries);
+			return m_IncludeFolders.Split(";\n".ToCharArray(), StringSplitOptions.RemoveEmptyEntries);
 		}
 
 		public string[] GetExcludeFolders()
 		{
-			return _excludeFolders.Split(";\n".ToCharArray(), StringSplitOptions.RemoveEmptyEntries);
+			return m_ExcludeFolders.Split(";\n".ToCharArray(), StringSplitOptions.RemoveEmptyEntries);
 		}
 
 		// NOTE: Copy pasted from ScenesInProject.
@@ -319,21 +354,21 @@ namespace DevLocker.Tools.AssetManagement
 			return ShouldExclude(ExcludePreferences, path);
 		}
 
-		private void RefreshSearchTemplatesOrder()
+		private void RefreshSearchFilterTypesOrder()
 		{
-			var enabledTemplates = new List<GUISearchTemplate>();
+			var enabledSearchFilterTypes = new List<GUISearchFilter>();
 
-			foreach(var template in _searchTemplates) {
-				if (template.IsEnabled(_searchFilter)) {
-					enabledTemplates.Add(template);
-					template.ApplyToSearchFilter(ref _searchFilter, false);
+			foreach(var searchFilterType in m_SearchFilterTypes) {
+				if (searchFilterType.IsEnabled(m_SearchFilter)) {
+					enabledSearchFilterTypes.Add(searchFilterType);
+					searchFilterType.ApplyToSearchFilter(ref m_SearchFilter, false);
 				}
 			}
 
-			_searchFilter = _searchFilter.Trim();
+			m_SearchFilter = m_SearchFilter.Trim();
 
-			foreach(var template in enabledTemplates) {
-				template.ApplyToSearchFilter(ref _searchFilter, true);
+			foreach(var searchFilterType in enabledSearchFilterTypes) {
+				searchFilterType.ApplyToSearchFilter(ref m_SearchFilter, true);
 			}
 		}
 
@@ -342,7 +377,7 @@ namespace DevLocker.Tools.AssetManagement
 			var includeFolders = GetIncludeFolders();
 			var excludeFolders = GetExcludeFolders();
 
-			var query = AssetDatabase.FindAssets(_searchFilter.Trim())
+			var query = AssetDatabase.FindAssets(m_SearchFilter.Trim())
 				.Select(AssetDatabase.GUIDToAssetPath)
 				.Distinct() // Some assets might have sub-assets resulting in having the same path.
 				.Where(path => includeFolders.Length == 0 || includeFolders.Any(includePath => path.StartsWith(includePath.Trim())))
@@ -361,8 +396,8 @@ namespace DevLocker.Tools.AssetManagement
 
 		public void RefreshCounters()
 		{
-			foreach (var template in _searchTemplates) {
-				template.Count = AssetDatabase.FindAssets(template.Filter).Length;
+			foreach (var searchFilterType in m_SearchFilterTypes) {
+				searchFilterType.Count = AssetDatabase.FindAssets(searchFilterType.Filter).Length;
 			}
 		}
 	}

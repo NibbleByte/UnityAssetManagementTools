@@ -20,8 +20,8 @@ namespace DevLocker.Tools.AssetManagement
 		static void Init()
 		{
 			var window = GetWindow<SearchDuplicateAssets>("Search Duplicate Assets");
-			window._searchFilter.SetTemplateEnabled("Materials", true);
-			window._searchFilter.SetTemplateEnabled("Textures", true);
+			window._searchFilter.SetSearchFilterType(SearchAssetsFilter.SearchFilterType.Materials, true);
+			window._searchFilter.SetSearchFilterType(SearchAssetsFilter.SearchFilterType.Textures, true);
 		}
 
 		private SearchAssetsFilter _searchFilter = new SearchAssetsFilter() { ExcludePackages = true };
@@ -67,6 +67,7 @@ namespace DevLocker.Tools.AssetManagement
 				EditorGUILayout.BeginVertical(EditorStyles.helpBox);
 
 				_searchFilter.DrawIncludeExcludeFolders();
+				_searchFilter.DrawFiltersField();
 				_searchFilter.DrawTypeFilters(position.width);
 
 				EditorGUILayout.EndVertical();
