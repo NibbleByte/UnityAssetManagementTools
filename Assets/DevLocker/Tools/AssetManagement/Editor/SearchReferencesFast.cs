@@ -48,9 +48,9 @@ namespace DevLocker.Tools.AssetManagement
 		static void Init()
 		{
 			var window = GetWindow<SearchReferencesFast>("Search References");
-			window.m_SearchFilter.SetTemplateEnabled("Scenes", true);
-			window.m_SearchFilter.SetTemplateEnabled("Prefabs", true);
-			window.m_SearchFilter.SetTemplateEnabled("Script Obj", true);
+			window.m_SearchFilter.SetSearchFilterType(SearchAssetsFilter.SearchFilterType.Scenes, true);
+			window.m_SearchFilter.SetSearchFilterType(SearchAssetsFilter.SearchFilterType.Prefabs, true);
+			window.m_SearchFilter.SetSearchFilterType(SearchAssetsFilter.SearchFilterType.ScriptObj, true);
 			window.m_SelectedResultProcessor = 0;
 			window.minSize = new Vector2(300, 600f);
 		}
@@ -108,8 +108,12 @@ namespace DevLocker.Tools.AssetManagement
 
 		private bool m_FoldOutSearchCriterias = true;
 		private SearchMetas m_SearchMetas = SearchMetas.SearchWithMetas;
+
 		[SerializeField]
-		private SearchAssetsFilter m_SearchFilter = new SearchAssetsFilter() { ExcludePackages = true };
+		private SearchAssetsFilter m_SearchFilter = new SearchAssetsFilter() {
+			ExcludePackages = true,
+			HideSearchFilters = new List<SearchAssetsFilter.SearchFilterType> { SearchAssetsFilter.SearchFilterType.Textures }
+		};
 
 		private string m_ResultsSearchEntryFilter = "";
 		private string m_ResultsFoundEntryFilter = "";
@@ -176,9 +180,9 @@ namespace DevLocker.Tools.AssetManagement
 			}
 
 			if (string.IsNullOrWhiteSpace(m_SearchFilter.SearchFilter)) {
-				m_SearchFilter.SetTemplateEnabled("Scenes", true);
-				m_SearchFilter.SetTemplateEnabled("Prefabs", true);
-				m_SearchFilter.SetTemplateEnabled("Script Obj", true);
+				m_SearchFilter.SetSearchFilterType(SearchAssetsFilter.SearchFilterType.Scenes, true);
+				m_SearchFilter.SetSearchFilterType(SearchAssetsFilter.SearchFilterType.Prefabs, true);
+				m_SearchFilter.SetSearchFilterType(SearchAssetsFilter.SearchFilterType.ScriptObj, true);
 			}
 
 			m_SerializedObject = new SerializedObject(this);
@@ -295,6 +299,13 @@ namespace DevLocker.Tools.AssetManagement
 				m_SearchMetas = (SearchMetas)EditorGUILayout.EnumPopup("Metas", m_SearchMetas);
 				EditorGUILayout.EndHorizontal();
 				EditorGUILayout.Space();
+
+				EditorGUILayout.BeginHorizontal();
+				m_SearchFilter.DrawFiltersField();
+				if (GUILayout.Button(new GUIContent("Auto", "Set filter appropriate for the selected objects."), GUILayout.ExpandWidth(false))) {
+					AutoSetSearchFilter();
+				}
+				EditorGUILayout.EndHorizontal();
 
 				m_SearchFilter.DrawTypeFilters(position.width);
 
@@ -1319,6 +1330,44 @@ namespace DevLocker.Tools.AssetManagement
 			if (m_ResultsHistoryIndex < m_ResultsHistory.Count - 1) {
 				m_ResultsHistoryIndex++;
 			}
+		}
+
+		private void AutoSetSearchFilter()
+		{
+			static bool SelOfTypes(params Type[] types)
+			{
+				foreach(Object obj in Selection.objects) {
+					foreach(Type type in types) {
+						if (type.IsAssignableFrom(obj.GetType()))
+							return true;
+					}
+				}
+
+				return false;
+			}
+
+
+			m_SearchFilter.ClearSearchFilterTypes();
+
+			// Textures are most often referenced by Materials. So just do that.
+			if (Selection.objects.All(o => o is Texture)) {
+				m_SearchFilter.SetSearchFilterType(SearchAssetsFilter.SearchFilterType.Materials, SelOfTypes(typeof(Texture)));
+				return;
+			}
+
+			// Basically everything can be referenced by scene, prefab or scriptable object.
+			m_SearchFilter.SetSearchFilterType(SearchAssetsFilter.SearchFilterType.Scenes, true);
+			m_SearchFilter.SetSearchFilterType(SearchAssetsFilter.SearchFilterType.Prefabs, true);
+			m_SearchFilter.SetSearchFilterType(SearchAssetsFilter.SearchFilterType.ScriptObj, true);
+
+			m_SearchFilter.SetSearchFilterType(SearchAssetsFilter.SearchFilterType.Materials, SelOfTypes(typeof(Texture)));
+
+			// Animation parameters can refer to assets.
+			m_SearchFilter.SetSearchFilterType(SearchAssetsFilter.SearchFilterType.Models, SelOfTypes(typeof(GameObject), typeof(ScriptableObject), typeof(AudioClip), typeof(Material)));
+			m_SearchFilter.SetSearchFilterType(SearchAssetsFilter.SearchFilterType.Animations, SelOfTypes(typeof(GameObject), typeof(ScriptableObject), typeof(AudioClip)));
+			m_SearchFilter.SetSearchFilterType(SearchAssetsFilter.SearchFilterType.Animators, SelOfTypes(typeof(AnimationClip), typeof(AvatarMask)));
+
+			m_SearchFilter.SetSearchFilterType(SearchAssetsFilter.SearchFilterType.Timelines, SelOfTypes(typeof(GameObject), typeof(AudioClip), typeof(AnimationClip)));
 		}
 
 		private static string GetGameObjectPath(GameObject go)
