@@ -126,6 +126,9 @@ namespace DevLocker.Tools.AssetManagement
 		private List<SearchResult> m_ResultsHistory = new List<SearchResult>();
 		private int m_ResultsHistoryIndex = 0;
 
+		private List<SavedSearchResult> m_SavedResults = new List<SavedSearchResult>();
+		private int m_SavedResultsIndex = 0;
+
 		private ResultsViewMode m_ResultsViewMode;
 		private ResultsPathMode m_ResultsPathMode;
 
@@ -209,6 +212,12 @@ namespace DevLocker.Tools.AssetManagement
 		private readonly static GUIContent ReplacePrefabsEntryButton = new GUIContent("Replace in scenes", "Replace this searched prefab entry with the specified replacement (on the left) in whichever scene it was found.");
 		private readonly static GUIContent ReplacePrefabsAllButton = new GUIContent("Replace All Prefabs", "Replace ALL searched prefab entries with the specified replacement (if provided) in whichever scene they were found.");
 
+		private static GUIContent MetaFileIconLabel;
+		private static GUIContent PlayButtonLabel;
+		private static GUIContent LoadSavedResultsLabel;
+		private static GUIContent DeleteSavedResultsLabel;
+		private static GUIContent SaveSearchResultsLabel;
+
 		private readonly static GUIContent CorelateButton = new GUIContent("Corelate", "Add new results entry by making corelation between the current and previous results from the history. Use back '<' and forward '>' to preview the result entries.\n\nExample:\n1. Search which shaders are used in which materials\n2. Search those materials in which prefabs are used\n3. Corelate the last two searches so it displays which shaders are used in which prefabs");
 
 
@@ -242,6 +251,13 @@ namespace DevLocker.Tools.AssetManagement
 			DarkerRowStyle.padding = new RectOffset();
 			DarkerRowStyle.margin = new RectOffset();
 			DarkerRowStyle.border = new RectOffset();
+
+			PlayButtonLabel = EditorGUIUtility.IconContent("PlayButton");
+			MetaFileIconLabel = new GUIContent(EditorGUIUtility.IconContent("MetaFile Icon").image, "Meta file");
+
+			LoadSavedResultsLabel = new GUIContent(EditorGUIUtility.IconContent("SceneLoadOut").image, "Load selected results.");
+			DeleteSavedResultsLabel = new GUIContent("X", "Save currently displayed results.\nResults are lost if window or Unity is closed.");
+			SaveSearchResultsLabel = new GUIContent(EditorGUIUtility.IconContent("SaveActive").image, "Save currently displayed results.\nResults are lost if window or Unity is closed.");
 		}
 
 		void OnGUI()
@@ -356,9 +372,7 @@ namespace DevLocker.Tools.AssetManagement
 
 			GUILayout.Space(4f);
 
-			if (m_CurrentResults != null) {
-				DrawResults();
-			}
+			DrawResults();
 
 			m_SerializedObject.ApplyModifiedProperties();
 		}
@@ -723,12 +737,7 @@ namespace DevLocker.Tools.AssetManagement
 
 			GUILayout.Space(4f);
 
-			EditorGUILayout.BeginHorizontal();
-			{
-				EditorGUILayout.LabelField("Saved Search Results", GUILayout.Width(EditorGUIUtility.labelWidth - 2f));
-				DrawSaveResultsSlots();
-			}
-			EditorGUILayout.EndHorizontal();
+			DrawSaveResultsSlots();
 
 			EditorGUILayout.BeginHorizontal();
 			{
@@ -864,7 +873,7 @@ namespace DevLocker.Tools.AssetManagement
 				}
 
 				if (showRootIcons) {
-					GUIContent icon = searchPath.EndsWith(".meta") ? EditorGUIUtility.IconContent("MetaFile Icon") : new GUIContent(AssetDatabase.GetCachedIcon(searchPath));
+					GUIContent icon = searchPath.EndsWith(".meta") ? MetaFileIconLabel : new GUIContent(AssetDatabase.GetCachedIcon(searchPath));
 					if (GUILayout.Button(icon, ResultIconStyle, GUILayout.Width(EditorGUIUtility.singleLineHeight), GUILayout.Height(EditorGUIUtility.singleLineHeight)) && data.Root.Exists()) {
 						EditorGUIUtility.PingObject(data.Root.ToUnityObject());
 					}
@@ -918,7 +927,7 @@ namespace DevLocker.Tools.AssetManagement
 						}
 
 						if (!showRootIcons) {
-							GUIContent icon = foundPath.EndsWith(".meta") ? EditorGUIUtility.IconContent("MetaFile Icon") : new GUIContent(AssetDatabase.GetCachedIcon(foundPath));
+							GUIContent icon = foundPath.EndsWith(".meta") ? MetaFileIconLabel : new GUIContent(AssetDatabase.GetCachedIcon(foundPath));
 							if (GUILayout.Button(icon, ResultIconStyle, GUILayout.Width(EditorGUIUtility.singleLineHeight), GUILayout.Height(EditorGUIUtility.singleLineHeight)) && found.Exists()) {
 								EditorGUIUtility.PingObject(found.ToUnityObject());
 							}
@@ -1086,7 +1095,7 @@ namespace DevLocker.Tools.AssetManagement
 
 				m_SelectedResultProcessor = EditorGUILayout.Popup(m_SelectedResultProcessor, processorNames, GUILayout.Width(150));
 
-				if (GUILayout.Button(EditorGUIUtility.IconContent("PlayButton"), GUILayout.ExpandWidth(false)) && m_CurrentResults != null) {
+				if (GUILayout.Button(PlayButtonLabel, GUILayout.ExpandWidth(false)) && m_CurrentResults != null) {
 					var results = m_CurrentResults.SearchResults
 						.Where(
 							rd => rd.Root.Exists() &&
@@ -1147,51 +1156,46 @@ namespace DevLocker.Tools.AssetManagement
 
 		private void DrawSaveResultsSlots()
 		{
-			const int SLOTS_COUNT = 5;
-			for (int i = 0; i < SLOTS_COUNT; ++i) {
-				if (GUILayout.Button(i.ToString(), GUILayout.ExpandWidth(false))) {
+			EditorGUILayout.BeginHorizontal();
 
+			EditorGUILayout.LabelField("Saved Results", GUILayout.Width(EditorGUIUtility.labelWidth - 2f));
 
+			m_SavedResultsIndex = EditorGUILayout.Popup(m_SavedResultsIndex, m_SavedResults.Select(sr => sr.Name).ToArray());
 
-					var option = EditorUtility.DisplayDialogComplex("Save/Load?",
-						$"You have selected save slot {i}.\nYou can save to or load from it results.",
-						"Save",
-						"Load",
-						"Cancel");
+			EditorGUI.BeginDisabledGroup(m_SavedResults.Count == 0);
 
-					switch (option) {
-						case 0:
-							var serializer = new BinaryFormatter();
+			if (GUILayout.Button(LoadSavedResultsLabel) && m_SavedResults.Count > 0) {
 
-							using (FileStream fileStream = File.Open(GetSaveSlothPath(i), FileMode.OpenOrCreate)) {
-								serializer.Serialize(fileStream, m_CurrentResults);
-							}
-
-							break;
-
-						case 1:
-							if (!File.Exists(GetSaveSlothPath(i))) {
-								EditorUtility.DisplayDialog("Load failed", $"No saved results were found at slot {i}.", "Ok");
-								break;
-							}
-
-							serializer = new BinaryFormatter();
-
-							using (FileStream fileStream = File.Open(GetSaveSlothPath(i), FileMode.Open)) {
-
-								try {
-									AddNewResultsEntry((SearchResult)serializer.Deserialize(fileStream));
-								}
-								catch (Exception ex) {
-									Debug.LogException(ex);
-									EditorUtility.DisplayDialog("Error", $"Could not load saved results from slot {i}.\nProbably the data format changed.\nFor details check the logs.", "Ok");
-								}
-							}
-							break;
-					}
-
+				using (MemoryStream memoryStream = new MemoryStream(m_SavedResults[m_SavedResultsIndex].SerializedSearchResult)) {
+					var serializer = new BinaryFormatter();
+					AddNewResultsEntry((SearchResult)serializer.Deserialize(memoryStream));
 				}
 			}
+
+			if (GUILayout.Button(DeleteSavedResultsLabel) && m_SavedResults.Count > 0) {
+				m_SavedResults.RemoveAt(m_SavedResultsIndex);
+				m_SavedResultsIndex = Mathf.Clamp(m_SavedResultsIndex, 0, m_SavedResults.Count - 1);
+			}
+
+			EditorGUI.EndDisabledGroup();
+
+			GUILayout.FlexibleSpace();
+
+			if (GUILayout.Button(SaveSearchResultsLabel) && m_CurrentResults != null) {
+
+				using (MemoryStream memoryStream = new MemoryStream()) {
+					var serializer = new BinaryFormatter();
+					serializer.Serialize(memoryStream, m_CurrentResults);
+
+					m_SavedResults.Insert(0, new SavedSearchResult() {
+						Name = $"{DateTime.Now:yyyy-MM-dd  HH:mm:ss} | {m_CurrentResults.SearchResults.Count} Entries",
+						SerializedSearchResult = memoryStream.ToArray(),
+					});
+					m_SavedResultsIndex = 0;
+				}
+			}
+
+			EditorGUILayout.EndHorizontal();
 		}
 
 		private static void ReplaceSinglePrefabResult(SearchResultData searchResultData, bool reparentChildren, StringBuilder replaceReport)
@@ -1689,6 +1693,13 @@ namespace DevLocker.Tools.AssetManagement
 			}
 
 			#endregion
+		}
+
+		[Serializable]
+		private struct SavedSearchResult
+		{
+			public string Name;
+			public byte[] SerializedSearchResult;
 		}
 
 		private class ProgressHandle
