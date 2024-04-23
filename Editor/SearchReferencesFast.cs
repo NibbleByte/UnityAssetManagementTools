@@ -256,7 +256,7 @@ namespace DevLocker.Tools.AssetManagement
 			MetaFileIconLabel = new GUIContent(EditorGUIUtility.IconContent("MetaFile Icon").image, "Meta file");
 
 			LoadSavedResultsLabel = new GUIContent(EditorGUIUtility.IconContent("SceneLoadOut").image, "Load selected results.");
-			DeleteSavedResultsLabel = new GUIContent("X", "Save currently displayed results.\nResults are lost if window or Unity is closed.");
+			DeleteSavedResultsLabel = new GUIContent("X", "Delete selected result.");
 			SaveSearchResultsLabel = new GUIContent(EditorGUIUtility.IconContent("SaveActive").image, "Save currently displayed results.\nResults are lost if window or Unity is closed.");
 		}
 
