@@ -854,10 +854,14 @@ namespace DevLocker.Tools.AssetManagement
 		{
 			const string missingLabel = "-- Missing --";
 
+			string[] searchEntryFilterTokens = string.IsNullOrEmpty(searchEntryFilter) ? null : searchEntryFilter.Split(new char[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+			string[] foundEntryFilterTokens = string.IsNullOrEmpty(foundEntryFilter) ? null : foundEntryFilter.Split(new char[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+
 			for (int resultIndex = 0; resultIndex < results.Count; ++resultIndex) {
 				var data = results[resultIndex];
 
-				if (!string.IsNullOrEmpty(searchEntryFilter) && (data.Root.Name.IndexOf(searchEntryFilter, StringComparison.OrdinalIgnoreCase) == -1))
+				// Do filtering
+				if (IsFilteredOut(data.Root.Name, searchEntryFilterTokens))
 					continue;
 
 				EditorGUILayout.BeginHorizontal();
@@ -908,7 +912,8 @@ namespace DevLocker.Tools.AssetManagement
 					for (int i = 0; i < data.Found.Count; ++i) {
 						var found = data.Found[i];
 
-						if (!string.IsNullOrEmpty(foundEntryFilter) && (found.Name.IndexOf(foundEntryFilter, StringComparison.OrdinalIgnoreCase) == -1))
+						// Do filtering
+						if (IsFilteredOut(found.Name, foundEntryFilterTokens))
 							continue;
 
 						if ((i + 1) % 2 == 0) {
@@ -1096,17 +1101,13 @@ namespace DevLocker.Tools.AssetManagement
 				m_SelectedResultProcessor = EditorGUILayout.Popup(m_SelectedResultProcessor, processorNames, GUILayout.Width(150));
 
 				if (GUILayout.Button(PlayButtonLabel, GUILayout.ExpandWidth(false)) && m_CurrentResults != null) {
+					string[] searchEntryFilterTokens = string.IsNullOrEmpty(m_ResultsSearchEntryFilter) ? null : m_ResultsSearchEntryFilter.Split(new char[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+					string[] foundEntryFilterTokens = string.IsNullOrEmpty(m_ResultsFoundEntryFilter) ? null : m_ResultsFoundEntryFilter.Split(new char[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+
 					var results = m_CurrentResults.SearchResults
-						.Where(
-							rd => rd.Root.Exists() &&
-								  (string.IsNullOrEmpty(m_ResultsSearchEntryFilter) ||
-								   rd.Root.Name.IndexOf(m_ResultsSearchEntryFilter, StringComparison.OrdinalIgnoreCase) !=
-								   -1))
+						.Where(rd => rd.Root.Exists() && !IsFilteredOut(rd.Root.Name, searchEntryFilterTokens))
 						.SelectMany(rd => rd.Found.Select(f => f.ToUnityObject()))
-						.Where(
-							obj => obj != null &&
-								  (string.IsNullOrEmpty(m_ResultsFoundEntryFilter) ||
-								   obj.name.IndexOf(m_ResultsFoundEntryFilter, StringComparison.OrdinalIgnoreCase) != -1));
+						.Where(obj => obj != null && !IsFilteredOut(obj.name, foundEntryFilterTokens));
 
 					ResultProcessors[m_SelectedResultProcessor].ProcessResults(results);
 				}
@@ -1403,6 +1404,20 @@ namespace DevLocker.Tools.AssetManagement
 			for (int i = 0; i < transform.childCount; ++i) {
 				if (ReparentForeignObjects(root, targetParent, transform.GetChild(i), reparented)) {
 					--i;
+				}
+			}
+
+			return false;
+		}
+
+		private static bool IsFilteredOut(string sceneName, string[] filterWords)
+		{
+			if (filterWords == null)
+				return false;
+
+			foreach (var filterWord in filterWords) {
+				if (sceneName.IndexOf(filterWord, StringComparison.OrdinalIgnoreCase) == -1) {
+					return true;
 				}
 			}
 
