@@ -1562,9 +1562,8 @@ namespace DevLocker.Tools.AssetManagement
 			StorePersonalPrefs();
 		}
 
-		private bool IsFilteredOut(string sceneName, string[] filterWords)
+		private static bool IsFilteredOut(string sceneName, string[] filterWords)
 		{
-
 			if (filterWords == null)
 				return false;
 
