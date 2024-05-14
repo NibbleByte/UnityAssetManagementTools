@@ -128,6 +128,7 @@ namespace DevLocker.Tools.AssetManagement
 
 		private List<SavedSearchResult> m_SavedResults = new List<SavedSearchResult>();
 		private int m_SavedResultsIndex = 0;
+		private string m_SavedResultsFileLocation => $"UserSettings/{nameof(SearchReferencesFast)}_SavedResults.dat";
 
 		private ResultsViewMode m_ResultsViewMode;
 		private ResultsPathMode m_ResultsPathMode;
@@ -189,6 +190,13 @@ namespace DevLocker.Tools.AssetManagement
 			}
 
 			m_SerializedObject = new SerializedObject(this);
+
+			if (File.Exists(m_SavedResultsFileLocation) && m_SavedResults.Count == 0) {
+				using (FileStream fileStream = File.Open(m_SavedResultsFileLocation, FileMode.Open)) {
+					var fileSerializer = new BinaryFormatter();
+					m_SavedResults = (List<SavedSearchResult>) fileSerializer.Deserialize(fileStream);
+				}
+			}
 		}
 
 		private void OnDisable()
@@ -1149,12 +1157,6 @@ namespace DevLocker.Tools.AssetManagement
 			EditorGUI.EndDisabledGroup();
 		}
 
-
-		private string GetSaveSlothPath(int index)
-		{
-			return Application.temporaryCachePath + "/" + $"SearchReferencesFast_Slot_{index}";
-		}
-
 		private void DrawSaveResultsSlots()
 		{
 			EditorGUILayout.BeginHorizontal();
@@ -1176,6 +1178,15 @@ namespace DevLocker.Tools.AssetManagement
 			if (GUILayout.Button(DeleteSavedResultsLabel) && m_SavedResults.Count > 0) {
 				m_SavedResults.RemoveAt(m_SavedResultsIndex);
 				m_SavedResultsIndex = Mathf.Clamp(m_SavedResultsIndex, 0, m_SavedResults.Count - 1);
+
+				if (m_SavedResults.Count != 0) {
+					using (FileStream fileStream = File.Open(m_SavedResultsFileLocation, FileMode.Create)) {
+						var fileSerializer = new BinaryFormatter();
+						fileSerializer.Serialize(fileStream, m_SavedResults);
+					}
+				} else if (File.Exists(m_SavedResultsFileLocation)) {
+					File.Delete(m_SavedResultsFileLocation);
+				}
 			}
 
 			EditorGUI.EndDisabledGroup();
@@ -1193,6 +1204,11 @@ namespace DevLocker.Tools.AssetManagement
 						SerializedSearchResult = memoryStream.ToArray(),
 					});
 					m_SavedResultsIndex = 0;
+
+					using (FileStream fileStream = File.Open(m_SavedResultsFileLocation, FileMode.Create)) {
+						var fileSerializer = new BinaryFormatter();
+						fileSerializer.Serialize(fileStream, m_SavedResults);
+					}
 				}
 			}
 
