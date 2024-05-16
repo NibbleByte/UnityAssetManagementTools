@@ -226,6 +226,11 @@ namespace DevLocker.Tools.AssetManagement
 		private static GUIContent DeleteSavedResultsLabel;
 		private static GUIContent SaveSearchResultsLabel;
 
+		private static GUIContent ToggleResultsButtonLabel;
+		private static GUIContent CopyResultsButtonLabel;
+		private static GUIContent RetrySearchButtonLabel;
+		private static GUIContent MoreButtonLabel;
+
 		private readonly static GUIContent CorelateButton = new GUIContent("Corelate", "Add new results entry by making corelation between the current and previous results from the history. Use back '<' and forward '>' to preview the result entries.\n\nExample:\n1. Search which shaders are used in which materials\n2. Search those materials in which prefabs are used\n3. Corelate the last two searches so it displays which shaders are used in which prefabs");
 
 
@@ -266,6 +271,11 @@ namespace DevLocker.Tools.AssetManagement
 			LoadSavedResultsLabel = new GUIContent(EditorGUIUtility.IconContent("SceneLoadOut").image, "Load selected results.");
 			DeleteSavedResultsLabel = new GUIContent("X", "Delete selected result.");
 			SaveSearchResultsLabel = new GUIContent(EditorGUIUtility.IconContent("SaveActive").image, "Save currently displayed results.\nResults are lost if window or Unity is closed.");
+
+			ToggleResultsButtonLabel = new GUIContent(EditorGUIUtility.IconContent("ToggleGroup Icon").image, "Toggle collaps or expand of all the results.");
+			CopyResultsButtonLabel = new GUIContent(EditorGUIUtility.IconContent("TreeEditor.Duplicate").image, "Copy results in the clipboard as plain text.");
+			RetrySearchButtonLabel = new GUIContent(EditorGUIUtility.IconContent("Refresh").image, "Retry same search that results were produced from.");
+			MoreButtonLabel = new GUIContent(EditorGUIUtility.IconContent("Toolbar Plus More").image, "More...");
 		}
 
 		void OnGUI()
@@ -759,8 +769,11 @@ namespace DevLocker.Tools.AssetManagement
 
 			EditorGUILayout.BeginHorizontal();
 			{
+				const float arrowsMaxWidth = 20f;
+				const float actionsButtonWidth = 30f;
+
 				EditorGUI.BeginDisabledGroup(m_ResultsHistoryIndex <= 0);
-				if (GUILayout.Button("<", EditorStyles.miniButtonLeft, GUILayout.MaxWidth(20f))) {
+				if (GUILayout.Button("<", EditorStyles.miniButtonLeft, GUILayout.MaxWidth(arrowsMaxWidth))) {
 					SelectPreviousResults();
 				}
 				EditorGUI.EndDisabledGroup();
@@ -775,12 +788,12 @@ namespace DevLocker.Tools.AssetManagement
 				EditorGUI.EndDisabledGroup();
 
 				EditorGUI.BeginDisabledGroup(m_ResultsHistoryIndex >= m_ResultsHistory.Count - 1);
-				if (GUILayout.Button(">", EditorStyles.miniButtonRight, GUILayout.MaxWidth(20f))) {
+				if (GUILayout.Button(">", EditorStyles.miniButtonRight, GUILayout.MaxWidth(arrowsMaxWidth))) {
 					SelectNextResults();
 				}
 				EditorGUI.EndDisabledGroup();
 
-				if (GUILayout.Button(new GUIContent("Toggle", "Toggle collaps or expand of all the results."), EditorStyles.miniButton, GUILayout.ExpandWidth(false)) && m_CurrentResults != null) {
+				if (GUILayout.Button(ToggleResultsButtonLabel, EditorStyles.miniButton, GUILayout.Width(actionsButtonWidth)) && m_CurrentResults != null) {
 					List<SearchResultData> data = m_ResultsViewMode switch {
 						ResultsViewMode.SearchResults => data = m_CurrentResults.SearchResults,
 						ResultsViewMode.CombinedFoundList => data = m_CurrentResults.CombinedFoundList,
@@ -793,8 +806,12 @@ namespace DevLocker.Tools.AssetManagement
 					}
 				}
 
+				if (GUILayout.Button(CopyResultsButtonLabel, EditorStyles.miniButton, GUILayout.Width(actionsButtonWidth)) && m_CurrentResults != null) {
+					DoCopyResults();
+				}
+
 				EditorGUI.BeginDisabledGroup(m_CurrentResults == null || m_CurrentResults.SearchTargetEntries.Length == 0);
-				if (GUILayout.Button(new GUIContent("Retry Search", "Retry same search that results were produced from"), EditorStyles.miniButton, GUILayout.ExpandWidth(false))) {
+				if (GUILayout.Button(RetrySearchButtonLabel, EditorStyles.miniButton, GUILayout.Width(actionsButtonWidth))) {
 					PerformSearchWork(m_CurrentResults.SearchMetas, m_CurrentResults.SearchTargetEntries.ToList(), m_CurrentResults.SearchMainAssetOnly, m_CurrentResults.SearchFilter);
 				}
 				EditorGUI.EndDisabledGroup();
@@ -802,7 +819,7 @@ namespace DevLocker.Tools.AssetManagement
 				Color prevBackgroundColor = GUI.backgroundColor;
 				GUI.backgroundColor = m_MoreResultsOperations ? Color.green : GUI.backgroundColor;
 
-				if (GUILayout.Button("More...", EditorStyles.miniButton)) {
+				if (GUILayout.Button(MoreButtonLabel, EditorStyles.miniButton, GUILayout.Width(actionsButtonWidth))) {
 					m_MoreResultsOperations = !m_MoreResultsOperations;
 				}
 
@@ -1054,6 +1071,97 @@ namespace DevLocker.Tools.AssetManagement
 
 				EditorGUILayout.EndHorizontal();
 			}
+		}
+
+		private void DoCopyResults()
+		{
+			var menu = new GenericMenu();
+			menu.AddItem(new GUIContent("Copy in Table Format"), false, () => {
+				var copyBuffer = new StringBuilder();
+				foreach (var data in m_CurrentResults.SearchResults) {
+
+					if (data.Found.Count == 0)
+						continue;
+
+					string rootPath = data.Root.AssetPath;
+					if (data.Root.IsSubAsset) {
+						rootPath += "/" + data.Root.Name;
+					}
+
+					foreach (var found in data.Found) {
+						copyBuffer.AppendLine($"{rootPath} -> {found.AssetPath}");
+					}
+
+					copyBuffer.AppendLine();
+				}
+
+				EditorGUIUtility.systemCopyBuffer = copyBuffer.ToString().Trim();
+			});
+
+			menu.AddItem(new GUIContent("Copy in Grouped Format"), false, () => {
+				var copyBuffer = new StringBuilder();
+				copyBuffer.AppendLine("========== SEARCHED ==========");
+
+				var foundPaths = new List<string>();
+
+				foreach (var data in m_CurrentResults.SearchResults) {
+					string rootPath = data.Root.AssetPath;
+					if (data.Root.IsSubAsset) {
+						rootPath += "/" + data.Root.Name;
+					}
+
+					copyBuffer.AppendLine($"{rootPath}");
+
+					foreach (var found in data.Found) {
+						if (!foundPaths.Contains(found.AssetPath)) {
+							foundPaths.Add(found.AssetPath);
+						}
+					}
+				}
+
+				copyBuffer.AppendLine();
+
+				copyBuffer.AppendLine("========== FOUND IN ==========");
+				copyBuffer.AppendLine(string.Join("\n", foundPaths));
+				copyBuffer.AppendLine();
+
+				EditorGUIUtility.systemCopyBuffer = copyBuffer.ToString();
+			});
+
+			menu.AddItem(new GUIContent("Copy Searched Only"), false, () => {
+				var copyBuffer = new StringBuilder();
+
+				foreach (var data in m_CurrentResults.SearchResults) {
+					string rootPath = data.Root.AssetPath;
+					if (data.Root.IsSubAsset) {
+						rootPath += "/" + data.Root.Name;
+					}
+
+					copyBuffer.AppendLine($"{rootPath}");
+				}
+
+				EditorGUIUtility.systemCopyBuffer = copyBuffer.ToString();
+			});
+
+			menu.AddItem(new GUIContent("Copy Found Only"), false, () => {
+
+				var foundPaths = new List<string>();
+
+				foreach (var data in m_CurrentResults.SearchResults) {
+					foreach (var found in data.Found) {
+						if (!foundPaths.Contains(found.AssetPath)) {
+							foundPaths.Add(found.AssetPath);
+						}
+					}
+				}
+
+				EditorGUIUtility.systemCopyBuffer = string.Join("\n", foundPaths);
+			});
+
+			menu.AddSeparator("");
+			menu.AddItem(new GUIContent("Cancel"), false, () => { });
+
+			menu.ShowAsContext();
 		}
 
 		private void DrawMoreResultsOperation()
