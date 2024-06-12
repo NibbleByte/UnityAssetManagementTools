@@ -1302,6 +1302,8 @@ namespace DevLocker.Tools.AssetManagement
 				}
 			}
 
+			EditorGUI.BeginDisabledGroup(m_SavedResults.Count == 0);
+
 			if (GUILayout.Button(SetSavedSearchResultsLabel) && m_CurrentResults != null && EditorUtility.DisplayDialog("Overwrite save entry?", "Are you sure you want to overwrite the selected save entry?", "Yes", "No")) {
 
 				using (MemoryStream memoryStream = new MemoryStream()) {
@@ -1319,8 +1321,6 @@ namespace DevLocker.Tools.AssetManagement
 					}
 				}
 			}
-
-			EditorGUI.BeginDisabledGroup(m_SavedResults.Count == 0);
 
 			if (GUILayout.Button(LoadSavedResultsLabel) && m_SavedResults.Count > 0) {
 
