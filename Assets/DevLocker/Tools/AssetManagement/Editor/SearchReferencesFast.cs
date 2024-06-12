@@ -224,7 +224,8 @@ namespace DevLocker.Tools.AssetManagement
 		private static GUIContent PlayButtonLabel;
 		private static GUIContent LoadSavedResultsLabel;
 		private static GUIContent DeleteSavedResultsLabel;
-		private static GUIContent SaveSearchResultsLabel;
+		private static GUIContent AddSavedSearchResultsLabel;
+		private static GUIContent SetSavedSearchResultsLabel;
 
 		private static GUIContent ToggleResultsButtonLabel;
 		private static GUIContent CopyResultsButtonLabel;
@@ -270,7 +271,8 @@ namespace DevLocker.Tools.AssetManagement
 
 			LoadSavedResultsLabel = new GUIContent(EditorGUIUtility.IconContent("SceneLoadOut").image, "Load selected results.");
 			DeleteSavedResultsLabel = new GUIContent("X", "Delete selected result.");
-			SaveSearchResultsLabel = new GUIContent(EditorGUIUtility.IconContent("SaveActive").image, "Save currently displayed results.\nResults are lost if window or Unity is closed.");
+			AddSavedSearchResultsLabel = new GUIContent(EditorGUIUtility.IconContent("d_CreateAddNew").image, "Add new save entry with the currently displayed results.");
+			SetSavedSearchResultsLabel = new GUIContent(EditorGUIUtility.IconContent("SaveActive").image, "Overwrite selected save entry with the currently displayed results.");
 
 			ToggleResultsButtonLabel = new GUIContent(EditorGUIUtility.IconContent("ToggleGroup Icon").image, "Toggle collaps or expand of all the results.");
 			CopyResultsButtonLabel = new GUIContent(EditorGUIUtility.IconContent("TreeEditor.Duplicate").image, "Copy results in the clipboard as plain text.");
@@ -833,15 +835,23 @@ namespace DevLocker.Tools.AssetManagement
 				selectList.AddRange(m_CurrentResults?.ResultTypesNames.Select(typeName => $"Found {typeName} Assets") ?? Enumerable.Empty<string>());
 				selectList.Add("All Found");
 				selectList.Add("Initial Searched Assets");
+				selectList.Add("Initial Searched That Have Matches");
+				selectList.Add("Initial Searched Don't Have Matches");
 
 				var index = EditorGUILayout.Popup(0, selectList.ToArray());
 
 				if (m_CurrentResults != null) {
 
-					if (index == selectList.Count - 1) { // Appended "Initial Searched Assets"
+					if (index == selectList.Count - 1) { // Appended "Initial Searched Don't Have Matches"
+						Selection.objects = m_CurrentResults.SearchResults.Where(data => data.Found.Count == 0).Select(data => data.Root.ToUnityObject()).ToArray();
+
+					} else if (index == selectList.Count - 2) { // Appended "Initial Searched That Have Matches"
+						Selection.objects = m_CurrentResults.SearchResults.Where(data => data.Found.Count != 0).Select(data => data.Root.ToUnityObject()).ToArray();
+
+					} if (index == selectList.Count - 3) { // Appended "Initial Searched Assets"
 						Selection.objects = m_CurrentResults.SearchResults.Select(data => data.Root.ToUnityObject()).ToArray();
 
-					} else if (index == selectList.Count - 2) { // Appended "All"
+					} else if (index == selectList.Count - 4) { // Appended "All"
 						Selection.objects = m_CurrentResults.SearchResults.SelectMany(data => data.Found.Select(f => f.ToUnityObject())).Distinct().ToArray();
 
 					} else if (m_CurrentResults.ResultTypesNames.Count > 0 && index >= 1) {
@@ -1273,35 +1283,7 @@ namespace DevLocker.Tools.AssetManagement
 
 			m_SavedResultsIndex = EditorGUILayout.Popup(m_SavedResultsIndex, m_SavedResults.Select(sr => sr.Name).ToArray());
 
-			EditorGUI.BeginDisabledGroup(m_SavedResults.Count == 0);
-
-			if (GUILayout.Button(LoadSavedResultsLabel) && m_SavedResults.Count > 0) {
-
-				using (MemoryStream memoryStream = new MemoryStream(m_SavedResults[m_SavedResultsIndex].SerializedSearchResult)) {
-					var serializer = new BinaryFormatter();
-					AddNewResultsEntry((SearchResult)serializer.Deserialize(memoryStream));
-				}
-			}
-
-			if (GUILayout.Button(DeleteSavedResultsLabel) && m_SavedResults.Count > 0) {
-				m_SavedResults.RemoveAt(m_SavedResultsIndex);
-				m_SavedResultsIndex = Mathf.Clamp(m_SavedResultsIndex, 0, m_SavedResults.Count - 1);
-
-				if (m_SavedResults.Count != 0) {
-					using (FileStream fileStream = File.Open(m_SavedResultsFileLocation, FileMode.Create)) {
-						var fileSerializer = new BinaryFormatter();
-						fileSerializer.Serialize(fileStream, m_SavedResults);
-					}
-				} else if (File.Exists(m_SavedResultsFileLocation)) {
-					File.Delete(m_SavedResultsFileLocation);
-				}
-			}
-
-			EditorGUI.EndDisabledGroup();
-
-			GUILayout.FlexibleSpace();
-
-			if (GUILayout.Button(SaveSearchResultsLabel) && m_CurrentResults != null) {
+			if (GUILayout.Button(AddSavedSearchResultsLabel) && m_CurrentResults != null) {
 
 				using (MemoryStream memoryStream = new MemoryStream()) {
 					var serializer = new BinaryFormatter();
@@ -1319,6 +1301,52 @@ namespace DevLocker.Tools.AssetManagement
 					}
 				}
 			}
+
+			if (GUILayout.Button(SetSavedSearchResultsLabel) && m_CurrentResults != null && EditorUtility.DisplayDialog("Overwrite save entry?", "Are you sure you want to overwrite the selected save entry?", "Yes", "No")) {
+
+				using (MemoryStream memoryStream = new MemoryStream()) {
+					var serializer = new BinaryFormatter();
+					serializer.Serialize(memoryStream, m_CurrentResults);
+
+					m_SavedResults[m_SavedResultsIndex] = new SavedSearchResult() {
+						Name = $"{DateTime.Now:yyyy-MM-dd  HH:mm:ss} | {m_CurrentResults.SearchResults.Count} Entries",
+						SerializedSearchResult = memoryStream.ToArray(),
+					};
+
+					using (FileStream fileStream = File.Open(m_SavedResultsFileLocation, FileMode.Create)) {
+						var fileSerializer = new BinaryFormatter();
+						fileSerializer.Serialize(fileStream, m_SavedResults);
+					}
+				}
+			}
+
+			EditorGUI.BeginDisabledGroup(m_SavedResults.Count == 0);
+
+			if (GUILayout.Button(LoadSavedResultsLabel) && m_SavedResults.Count > 0) {
+
+				using (MemoryStream memoryStream = new MemoryStream(m_SavedResults[m_SavedResultsIndex].SerializedSearchResult)) {
+					var serializer = new BinaryFormatter();
+					AddNewResultsEntry((SearchResult)serializer.Deserialize(memoryStream));
+				}
+			}
+
+			if (GUILayout.Button(DeleteSavedResultsLabel) && m_SavedResults.Count > 0 && EditorUtility.DisplayDialog("Delete save entry?", "Are you sure you want to delete the selected save entry?", "Yes", "No")) {
+				m_SavedResults.RemoveAt(m_SavedResultsIndex);
+				m_SavedResultsIndex = Mathf.Clamp(m_SavedResultsIndex, 0, m_SavedResults.Count - 1);
+
+				if (m_SavedResults.Count != 0) {
+					using (FileStream fileStream = File.Open(m_SavedResultsFileLocation, FileMode.Create)) {
+						var fileSerializer = new BinaryFormatter();
+						fileSerializer.Serialize(fileStream, m_SavedResults);
+					}
+				} else if (File.Exists(m_SavedResultsFileLocation)) {
+					File.Delete(m_SavedResultsFileLocation);
+				}
+			}
+
+			EditorGUI.EndDisabledGroup();
+
+			GUILayout.FlexibleSpace();
 
 			EditorGUILayout.EndHorizontal();
 		}
