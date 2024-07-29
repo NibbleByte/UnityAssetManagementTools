@@ -276,7 +276,7 @@ namespace DevLocker.Tools.AssetManagement
 			AddSavedSearchResultsLabel = new GUIContent(EditorGUIUtility.IconContent("d_CreateAddNew").image, "Add new save entry with the currently displayed results.");
 			SetSavedSearchResultsLabel = new GUIContent(EditorGUIUtility.IconContent("SaveActive").image, "Overwrite selected save entry with the currently displayed results.");
 
-			ToggleResultsButtonLabel = new GUIContent(EditorGUIUtility.IconContent("ToggleGroup Icon").image, "Toggle collaps or expand of all the results.");
+			ToggleResultsButtonLabel = new GUIContent(EditorGUIUtility.IconContent("ToggleGroup Icon").image, "Toggle collapse or expand of all the results.");
 			CopyResultsButtonLabel = new GUIContent(EditorGUIUtility.IconContent("TreeEditor.Duplicate").image, "Copy results in the clipboard as plain text.");
 			RetrySearchButtonLabel = new GUIContent(EditorGUIUtility.IconContent("Refresh").image, "Retry same search that results were produced from.");
 			MoreButtonLabel = new GUIContent(EditorGUIUtility.IconContent("Toolbar Plus More").image, "More...");
@@ -1241,6 +1241,45 @@ namespace DevLocker.Tools.AssetManagement
 					ResultProcessors[m_SelectedResultProcessor].ProcessResults(results);
 				}
 			}
+
+
+			Color prevColor = GUI.color;
+			GUI.color = Color.yellow;
+
+			if (GUILayout.Button(new GUIContent("X", "Remove more..."))) {
+				var menu = new GenericMenu();
+				menu.AddItem(new GUIContent("Remove entries with no found results."), false, () => {
+					m_CurrentResults.SearchResults.RemoveAll(data => data.Found.Count == 0);
+					m_CurrentResults.CombinedFoundList.RemoveAll(data => data.Found.Count == 0);
+				});
+				menu.AddItem(new GUIContent("Remove entries with found results."), false, () => {
+					m_CurrentResults.SearchResults.RemoveAll(data => data.Found.Count != 0);
+					m_CurrentResults.CombinedFoundList.RemoveAll(data => data.Found.Count != 0);
+				});
+
+				menu.AddSeparator("");
+				menu.AddItem(new GUIContent("Delete Found Assets"), false, () => {
+					var assets = m_CurrentResults.SearchResults.SelectMany(data => data.Found).Select(found => found.AssetPath).Distinct().ToArray();
+					if (EditorUtility.DisplayDialog("Delete Assets?", $"Are you sure you want to delete {assets.Length} FOUND assets?", "Yes", "No")) {
+						AssetDatabase.DeleteAssets(assets, new List<string>());
+						m_CurrentResults.SearchResults.RemoveAll(data => data.Found.Count != 0);
+						m_CurrentResults.CombinedFoundList.Clear();
+					}
+				});
+				menu.AddItem(new GUIContent("Delete Unused Assets"), false, () => {
+					var assets = m_CurrentResults.SearchResults.Where(data => data.Found.Count == 0).Select(data => data.Root.AssetPath).ToArray();
+					if (EditorUtility.DisplayDialog("Delete Assets?", $"Are you sure you want to delete {assets.Length} UNUSED assets?", "Yes", "No")) {
+						AssetDatabase.DeleteAssets(assets, new List<string>());
+						m_CurrentResults.SearchResults.RemoveAll(data => data.Found.Count == 0);
+					}
+				});
+
+				menu.AddSeparator("");
+				menu.AddItem(new GUIContent("Cancel"), false, () => { });
+
+				menu.ShowAsContext();
+			}
+			GUI.color = prevColor;
 
 			EditorGUILayout.EndHorizontal();
 		}
