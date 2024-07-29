@@ -1,7 +1,7 @@
 {
     "name": "devlocker.tools.assetmanagement",
     "displayName": "Asset Management Tools",
-    "version": "1.3.2",
+    "version": "1.3.4",
     "unity": "2018.3",
     "description": "Asset management tools.\nTools:\n- Scenes In Project - list of all available scenes in the project for quick access.\n- Multi-Rename Tool - mass search and rename assets.\n- Search References (FAST) - searches where selected asset is used (text search by guid).\n- Search Prefabs Components - searches for components in prefabs.\n- Search Duplicate Assets - searches duplicate assets (by name).\n\nUsage: \"Tools/Asset Management/...\".",
 	  "category": "Tools",
