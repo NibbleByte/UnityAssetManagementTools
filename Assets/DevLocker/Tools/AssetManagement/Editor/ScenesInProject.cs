@@ -405,6 +405,8 @@ namespace DevLocker.Tools.AssetManagement
 
 		private const string ProjectPreferencesPath = "ProjectSettings/ScenesInProject.prefs";
 
+		private static NaturalStringExtensions.NaturalStringComparer m_NaturalStringComparer = new NaturalStringExtensions.NaturalStringComparer(StringComparison.InvariantCultureIgnoreCase);
+
 
 		[MenuItem("Tools/Asset Management/Scenes In Project", false, 68)]
 		private static void Init()
@@ -714,15 +716,20 @@ namespace DevLocker.Tools.AssetManagement
 					break;
 
 				case SortType.ByFileName:
-					list.Sort((a, b) => Path.GetFileNameWithoutExtension(a.Path).CompareTo(Path.GetFileNameWithoutExtension(b.Path)));
+					list.Sort((a, b) => CompareStringsNaturally(Path.GetFileNameWithoutExtension(a.Path), Path.GetFileNameWithoutExtension(b.Path)));
 					break;
 
 				case SortType.ByPath:
-					list.Sort((a, b) => a.Path.CompareTo(b.Path));
+					list.Sort((a, b) => CompareStringsNaturally(a.Path, b.Path));
 					break;
 
 				default: throw new NotImplementedException();
 			}
+		}
+
+		private static int CompareStringsNaturally(string str1, string str2)
+		{
+			return m_NaturalStringComparer.Compare(str1, str2);
 		}
 
 		private int RegroupScenes(List<SceneEntry> list)
