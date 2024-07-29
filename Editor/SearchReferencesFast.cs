@@ -234,6 +234,8 @@ namespace DevLocker.Tools.AssetManagement
 
 		private readonly static GUIContent CorelateButton = new GUIContent("Corelate", "Add new results entry by making corelation between the current and previous results from the history. Use back '<' and forward '>' to preview the result entries.\n\nExample:\n1. Search which shaders are used in which materials\n2. Search those materials in which prefabs are used\n3. Corelate the last two searches so it displays which shaders are used in which prefabs");
 
+		private static NaturalStringExtensions.NaturalStringComparer m_NaturalStringComparer = new NaturalStringExtensions.NaturalStringComparer(StringComparison.InvariantCulture);
+
 
 		private void InitStyles()
 		{
@@ -561,13 +563,14 @@ namespace DevLocker.Tools.AssetManagement
 			}
 
 			foreach (var data in m_CurrentResults.SearchResults) {
-				data.Found.Sort((l, r) => String.Compare(l.AssetPath, r.AssetPath, StringComparison.Ordinal));
+				data.Found.Sort((l, r) => CompareStringsNaturally(l.AssetPath, r.AssetPath));
 			}
 
 			foreach (var data in m_CurrentResults.CombinedFoundList) {
-				data.Found.Sort((l, r) => String.Compare(l.AssetPath, r.AssetPath, StringComparison.Ordinal));
+				data.Found.Sort((l, r) => CompareStringsNaturally(l.AssetPath, r.AssetPath));
 				data.ShowDetails = false;
 			}
+			m_CurrentResults.CombinedFoundList.Sort((l, r) => CompareStringsNaturally(l.Root.AssetPath, r.Root.AssetPath));
 
 			EditorUtility.ClearProgressBar();
 		}
@@ -1596,6 +1599,11 @@ namespace DevLocker.Tools.AssetManagement
 				GUI.FocusControl("");
 				m_ShowPreferences = false;
 			}
+		}
+
+		private static int CompareStringsNaturally(string str1, string str2)
+		{
+			return m_NaturalStringComparer.Compare(str1, str2);
 		}
 
 		[Serializable]
