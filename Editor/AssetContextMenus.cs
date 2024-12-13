@@ -112,15 +112,24 @@ namespace DevLocker.Tools
 			@"C:\Programs\Notepad++\notepad++.exe",
 		};
 		private static string[] _sublimePaths = new string[] {
-			@"C:\Program Files\Sublime Text 3\subl.exe",
+			@"c:\Program Files\Sublime Text\sublime_text.exe",
+			@"c:\Program Files\Sublime Text\subl.exe",
 			@"C:\Program Files\Sublime Text 3\sublime_text.exe",
+			@"C:\Program Files\Sublime Text 3\subl.exe",
 			@"C:\Program Files\Sublime Text 2\sublime_text.exe",
-			@"C:\Program Files (x86)\Sublime Text 3\subl.exe",
+			@"C:\Program Files\Sublime Text 2\subl.exe",
+			@"c:\Program Files (x86)\Sublime Text\sublime_text.exe",
+			@"c:\Program Files (x86)\Sublime Text\subl.exe",
 			@"C:\Program Files (x86)\Sublime Text 3\sublime_text.exe",
+			@"C:\Program Files (x86)\Sublime Text 3\subl.exe",
 			@"C:\Program Files (x86)\Sublime Text 2\sublime_text.exe",
-			@"C:\Programs\Sublime Text 3\subl.exe",
+			@"C:\Program Files (x86)\Sublime Text 2\subl.exe",
+			@"c:\Programs\Sublime Text\sublime_text.exe",
+			@"c:\Programs\Sublime Text\subl.exe",
 			@"C:\Programs\Sublime Text 3\sublime_text.exe",
+			@"C:\Programs\Sublime Text 3\subl.exe",
 			@"C:\Programs\Sublime Text 2\sublime_text.exe",
+			@"C:\Programs\Sublime Text 2\subl.exe",
 		};
 
 		public const int EditWith_MenuItemPriorityStart = -980;
@@ -140,11 +149,27 @@ namespace DevLocker.Tools
 
 		[MenuItem("Assets/Edit With/Sublime", false, EditWith_MenuItemPriorityStart + 2)]
 		private static void EditWithSublime()
-			=> EditWithApp(PrettyKey_Sublime, "subl.exe", GetPathsOfAssetsJoined(Selection.objects, false), _sublimePaths);
+		{
+			// Portable versions don't add registry keys for the location.
+			// Their folder is also named differently by default. Try to find it in the usual place.
+			// C:\Program Files\sublime_text_build_4152_x64\...
+			var portablePaths64 = Directory.GetDirectories(@"C:\Program Files\", "sublime_text_build*", SearchOption.TopDirectoryOnly).Select(p => p + @"\sublime_text.exe");
+			var portablePaths86 = Directory.GetDirectories(@"C:\Program Files (x86)\", "sublime_text_build*", SearchOption.TopDirectoryOnly).Select(p => p + @"\sublime_text.exe");
+
+			EditWithApp(PrettyKey_Sublime, "sublime_text.exe", GetPathsOfAssetsJoined(Selection.objects, false), _sublimePaths.Concat(portablePaths64).Concat(portablePaths86).ToArray());
+		}
 
 		[MenuItem("Assets/Edit With/Sublime Metas", false, EditWith_MenuItemPriorityStart + 3)]
 		private static void EditWithSublimeMetas()
-			=> EditWithApp(PrettyKey_Sublime, "subl.exe", GetPathsOfAssetsJoined(Selection.objects, true), _sublimePaths);
+		{
+			// Portable versions don't add registry keys for the location.
+			// Their folder is also named differently by default. Try to find it in the usual place.
+			// C:\Program Files\sublime_text_build_4152_x64\...
+			var portablePaths64 = Directory.GetDirectories(@"C:\Program Files\", "sublime_text_build*", SearchOption.TopDirectoryOnly).Select(p => p + @"\sublime_text.exe");
+			var portablePaths86 = Directory.GetDirectories(@"C:\Program Files (x86)\", "sublime_text_build*", SearchOption.TopDirectoryOnly).Select(p => p + @"\sublime_text.exe");
+
+			EditWithApp(PrettyKey_Sublime, "sublime_text.exe", GetPathsOfAssetsJoined(Selection.objects, true), _sublimePaths.Concat(portablePaths64).Concat(portablePaths86).ToArray());
+		}
 
 		[MenuItem("Assets/Edit With/Scripts IDE", false, EditWith_MenuItemPriorityStart + 4)]
 		private static void EditWithIDE()
@@ -381,6 +406,15 @@ namespace DevLocker.Tools
 					// "C:\Programs\Krita\bin\krita.exe" "%1"
 					if (executablePath.StartsWith('"')) {
 						executablePath = executablePath.Substring(1, executablePath.IndexOf('"', 1) - 1);
+					} else {
+						// Sometimes executable path is not surrounded in quotes. Try to find the "%1" part.
+						int endIndex = executablePath.IndexOf('"');
+						if (endIndex == -1) {
+							endIndex = executablePath.IndexOf('%');
+						}
+						if (endIndex != -1) {
+							executablePath = executablePath.Substring(0, endIndex - 1).Trim();
+						}
 					}
 
 					if (File.Exists(executablePath)) {
