@@ -123,7 +123,7 @@ Open by right click on GameObject and selecting "Find References In Scene". You 
 ## Asset Context Menus
 Useful context menus:
 * Copy selected guids or asset paths
-* Edit selected assets with third-party app that is already installed on the machine
+* Edit selected assets with third-party app that is already installed on the machine. Supported apps (not sponsored in any way): Notepad++, Sublime, Paint.NET, Krita, Photoshop, Gimp, Blender.
 
 ![AssetContextMenus-Copy](https://github.com/NibbleByte/UnityAssetManagementTools/blob/master/Docs/Screenshots/AssetContextMenus-Copy.png)
 
