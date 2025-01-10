@@ -6,10 +6,10 @@ Small collection of tools for Unity used to manage your assets. Part of the [Dev
 [![openupm](https://img.shields.io/npm/v/devlocker.tools.assetmanagement?label=openupm&registry_uri=https://package.openupm.com)](https://openupm.com/packages/devlocker.tools.assetmanagement/)
 
 ## List of Tools
-* [Scenes In Project](#scenes-in-project) *(the star of this project)*
+* [Scenes In Project](#scenes-in-project)
 * [MultiRename Tool](#multirename-tool)
 * [Search Duplicate Assets](#search-duplicate-assets)
-* [Search References Fast!](#search-references-fast) *(discontinued)*
+* [Search References Fast!](#search-references-fast)
 * [Search Prefabs Components](#search-prefabs-components)
 * [Asset Context Menus](#asset-context-menus)
 
@@ -94,20 +94,15 @@ Search what assets in the project refer directly to the selected ones.<br />
 It gets the target GUIDs and performs text search in all project assets without actually loading them. <br />
 This is very fast for searching prefabs references in scenes as it wouldn't load the scenes themselves. <br />
 
-**NOTE: This tool requires your project to have "Assets Serialization Mode" set to "Force Text" in the project settings.**
-
-**Discontinued: there are much better tools out there that offer better features, UX and support. This tool was uploaded here for historical reasons.**
-
 ### Features:
 * Can search for sub assets (GUID + localId)
 * Can search text directly (instead of selected asset GUIDs).
 * Select what types of assets to search in. Can include / exclude meta files as well.
 * Replace prefab instances in found scenes with another or just remove them.
-* Select the assets in the result by type.
 * Doesn't load assets (especially scenes which is slow).
 
 ### Issues & Drawbacks:
-* Project needs to have "Assets Serialization Mode" set to "Force Text"
+* Project needs to have "Assets Serialization Mode" set to "Force Text" (which is always a good idea to have)
 * Doesn't work with nested prefabs.
 * No cache. Every search is done from scratch.
 * No recursive mode - search direct references only.
@@ -128,7 +123,7 @@ Open by right click on GameObject and selecting "Find References In Scene". You 
 ## Asset Context Menus
 Useful context menus:
 * Copy selected guids or asset paths
-* Edit selected assets with third-party app that is already installed on the machine
+* Edit selected assets with third-party app that is already installed on the machine. Supported apps (not sponsored in any way): Notepad++, Sublime, Paint.NET, Krita, Photoshop, Gimp, Blender.
 
 ![AssetContextMenus-Copy](https://github.com/NibbleByte/UnityAssetManagementTools/blob/master/Docs/Screenshots/AssetContextMenus-Copy.png)
 
