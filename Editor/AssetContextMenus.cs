@@ -26,7 +26,7 @@ namespace DevLocker.Tools
 			foreach (var obj in Selection.objects) {
 				string guid;
 				long localId;
-				if (!AssetDatabase.TryGetGUIDAndLocalFileIdentifier(obj, out guid, out localId))
+				if (obj == null || !AssetDatabase.TryGetGUIDAndLocalFileIdentifier(obj, out guid, out localId))
 					continue;
 
 				string resultGuid = guid;
@@ -49,7 +49,7 @@ namespace DevLocker.Tools
 			// Get by selected objects.
 			// Selection.objects my have sub-assets (for example embedded fbx materials).
 			// All sub assets have the same guid, but different local id.
-			var objectsNames = Selection.objects.Select(o => o.name).ToList();
+			var objectsNames = Selection.objects.Where(o => o != null).Select(o => o.name).ToList();
 
 			// Get by selected guids.
 			// Selection.assetGUIDs includes selected folders on the left in two-column project view (Selection.objects does not).
@@ -145,7 +145,7 @@ namespace DevLocker.Tools
 
 		[MenuItem("Assets/Edit With/Notepad++ Metas", false, EditWith_MenuItemPriorityStart + 1)]
 		private static void EditWithNotepadPlusPlusMetas()
-			=> EditWithApp(PrettyKey_NotepadPlusPlus,"notepad++.exe", GetPathsOfAssetsJoined(Selection.objects, true), _notepadPaths);
+			=> EditWithApp(PrettyKey_NotepadPlusPlus, "notepad++.exe", GetPathsOfAssetsJoined(Selection.objects, true), _notepadPaths);
 
 		[MenuItem("Assets/Edit With/Sublime", false, EditWith_MenuItemPriorityStart + 2)]
 		private static void EditWithSublime()
