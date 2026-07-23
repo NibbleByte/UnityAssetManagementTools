@@ -453,6 +453,8 @@ namespace DevLocker.Tools.AssetManagement
 				}
 			}
 
+			RemoveSingleSpriteTextures(allTargets);
+
 			int nextCounter = _startCounter;
 
 			// Force find results according to search. Otherwise will match all files.
@@ -880,6 +882,28 @@ namespace DevLocker.Tools.AssetManagement
 				EditorUtility.DisplayDialog("Error", "Something bad happened while executing the operation. Check the error logs.", "I Will!");
 			} else {
 				ShowNotification(new GUIContent("Rename finished!\nCheck the logs."));
+			}
+		}
+
+		private void RemoveSingleSpriteTextures(List<Object> allObjects)
+		{
+			for(int i = 1 /* start from 1 */; i < allObjects.Count; ++i) {
+
+
+				if (allObjects[i] is Sprite spriteObj) {
+
+					var prevObject = allObjects[i - 1];
+					var texturePath = AssetDatabase.GetAssetPath(spriteObj);
+
+					if (prevObject.name != spriteObj.name || texturePath != AssetDatabase.GetAssetPath(prevObject))
+						continue;
+
+					var textureImporter = AssetImporter.GetAtPath(texturePath) as TextureImporter;
+					if (textureImporter != null && textureImporter.spriteImportMode == SpriteImportMode.Single) {
+						allObjects.RemoveAt(i);
+						i--;
+					}
+				}
 			}
 		}
 
